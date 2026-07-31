@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import multiprocessing
 from concurrent.futures import ProcessPoolExecutor
 from functools import partial
 from pathlib import Path
@@ -25,7 +26,20 @@ _env = Environment(
 )
 
 # PDF 렌더링 전용 프로세스 풀. 코어 수에 맞춰 워커 수를 조정한다.
-_executor = ProcessPoolExecutor(max_workers=4)
+# mp_context를 spawn으로 강제한다 — 기본값인 fork는 워커가 부모의 열린 파일
+# 디스크립터(uvicorn의 리스닝 소켓 포함)를 그대로 물려받아, 부모 프로세스만
+# 죽여도 워커가 소켓을 쥔 채 남아 포트가 계속 점유되는 좀비 프로세스를 만든다.
+_executor = ProcessPoolExecutor(max_workers=4, mp_context=multiprocessing.get_context("spawn"))
+
+
+def shutdown_executor() -> None:
+    """FastAPI 종료 이벤트에서 호출해 워커 프로세스를 정리한다.
+
+    wait=True로 블로킹해야 한다 — False로 두면 이 호출이 반환된 직후 인터프리터가
+    종료되면서 워커가 종료 시그널을 받지 못한 채 부모 없는 고아 프로세스로 남아
+    queue.get()에서 영원히 블록되는 현상이 실제로 재현됐다(py-spy로 확인).
+    """
+    _executor.shutdown(wait=True, cancel_futures=True)
 
 
 def _render_pdf_bytes(html_content: str, base_url: str) -> bytes:
