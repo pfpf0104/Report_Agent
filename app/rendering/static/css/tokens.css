@@ -18,19 +18,12 @@
   font-style: normal;
 }
 
-@font-face {
-  font-family: "Noto Sans KR";
-  src: url("../fonts/NotoSansKR-Regular.woff2") format("woff2");
-  font-weight: 400;
-  font-style: normal;
-}
-
-@font-face {
-  font-family: "Noto Sans KR";
-  src: url("../fonts/NotoSansKR-Bold.woff2") format("woff2");
-  font-weight: 700;
-  font-style: normal;
-}
+/*
+ * Noto Sans KR은 번들하지 않는다 — CJK 특성상 유니코드 범위별로 수십 개
+ * 파일로 쪼개져 배포되어 단일 파일 임베딩에 부적합하다. Pretendard가 이미
+ * 한글·영문을 한 파일로 완전히 커버하므로, Noto Sans KR은 폰트 스택의
+ * 마지막 항목으로만 남겨 시스템에 설치된 경우의 폴백 용도로 쓴다.
+ */
 
 :root {
   /* 브랜드 / 레이아웃 색상 */

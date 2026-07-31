@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% from "partials/header.html" import report_header %}
+{% from "partials/footer.html" import report_footer %}
+{% from "partials/metric_cards.html" import metric_cards %}
+
+{% block title %}한국 주식시장 및 대표 반도체 기업 적정가치 평가{% endblock %}
+
+{% block content %}
+<div class="page">
+  <div class="top-bar"></div>
+  <div class="page-body">
+    {{ report_header("독립 투자분석 보고서", title, subtitle, meta_lines) }}
+    {{ metric_cards(cards) }}
+    <table class="data-table">
+      <thead>
+        <tr>
+          {% for col in table.columns %}<th>{{ col }}</th>{% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in table.rows %}
+        <tr>
+          {% for cell in row %}<td>{{ cell }}</td>{% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {{ report_footer(source) }}
+</div>
+{% endblock %}

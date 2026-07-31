@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% from "partials/header.html" import report_header %}
+{% from "partials/footer.html" import report_footer %}
+{% from "partials/metric_cards.html" import metric_cards %}
+{% from "partials/callout_box.html" import callout_box %}
+
+{% block title %}MetroGuard-KR Operating Report{% endblock %}
+
+{% block content %}
+<div class="page">
+  <div class="top-bar"></div>
+  <div class="page-body">
+    {{ report_header("METROGUARD-KR · MONTH-END OPERATING REPORT", title, subtitle, meta_lines) }}
+    {{ callout_box("info", headline, headline_body) }}
+    {{ metric_cards(cards) }}
+  </div>
+  {{ report_footer(source) }}
+</div>
+{% endblock %}
