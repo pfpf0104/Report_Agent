@@ -1,17 +1,186 @@
-"""CallRank 리포트 context 빌더.
+"""CallRank: 고정 헤지(표준화·PCA-32·Ridge) 기반 섹터 랭킹 + 리포트 context 빌더.
 
-정식 PCA·Ridge 섹터 랭킹 모델은 별도로 구현 예정이며, 여기서는 dim_asset/
-fact_market_daily에서 실제로 조회한 MTD(month-to-date) 수익률을 바탕으로
-리포트 첫 페이지에 필요한 메트릭 카드를 구성한다.
+방법론 요약 (첨부 CallRank 보고서 2~5페이지 기준):
+  1. 기업의 이번 분기 실적발표 Q&A를 128/160/200단어 passage로 나눠 임베딩한다.
+  2. 같은 기업의 과거 평균 임베딩을 빼 firm-conditioned signed residual을 만든다
+     (기업마다 원래 말투가 다르므로 자기 자신을 기준선으로 삼는다).
+  3. 기업별 residual을 섹터 안에서 동일 가중으로 평균한다(기업 먼저, 섹터 나중 —
+     시가총액이 신호를 지배하지 않도록).
+  4. pre-2021 데이터로 미리 고정한 표준화·PCA-32·Ridge 계수를 이후 매월 그대로
+     적용한다(재학습 없음 — "고정 헤지").
+  5. 128/160/200단어 세 모델의 섹터 순위(정규화 점수)를 평균해 최종 순위를 낸다.
+  6. 최소 6개 섹터가 있어야 거래 결정을 연다.
+
+입력 임베딩은 sector_embeddings.py의 합성 데이터다 — 그 파일의 TODO 참고.
+이 파일의 알고리즘(고정 헤지 fit/score, 섹터 집계, 앙상블, 최소 섹터 게이트)은
+순수 함수라 실제 SEC-BERT 임베딩으로 교체해도 그대로 재사용된다.
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import date
 
+import numpy as np
+from sklearn.decomposition import PCA
+from sklearn.linear_model import Ridge
+from sklearn.preprocessing import StandardScaler
 from sqlalchemy.orm import Session
 
+from app.computation.quant.sector_embeddings import (
+    SECTOR_ETF_BY_NAME,
+    SECTOR_OF_COMPANY,
+    generate_current_residuals,
+    generate_frozen_hedge_training_set,
+)
 from app.db.models.dim_asset import DimAsset
 from app.db.models.fact_market_daily import FactMarketDaily
+
+PASSAGE_LENGTHS = (128, 160, 200)
+MIN_ELIGIBLE_SECTORS = 6
+
+
+@dataclass(frozen=True)
+class FrozenHedge:
+    """pre-2021 데이터로 한 번 fit하고 이후 재학습 없이 그대로 쓰는 계수 묶음."""
+
+    scaler_mean: np.ndarray
+    scaler_scale: np.ndarray
+    pca_components: np.ndarray  # (n_components, n_features)
+    pca_mean: np.ndarray
+    ridge_coef: np.ndarray  # (n_components,)
+    ridge_intercept: float
+
+
+def fit_frozen_hedge(x_hist: np.ndarray, y_hist: np.ndarray, n_components: int = 32) -> FrozenHedge:
+    """과거(pre-2021) 임베딩·타깃으로 표준화·PCA·Ridge를 한 번만 학습한다."""
+    scaler = StandardScaler().fit(x_hist)
+    x_scaled = scaler.transform(x_hist)
+
+    n_components = min(n_components, x_scaled.shape[0], x_scaled.shape[1])
+    pca = PCA(n_components=n_components).fit(x_scaled)
+    x_pca = pca.transform(x_scaled)
+
+    ridge = Ridge(alpha=1.0).fit(x_pca, y_hist)
+
+    return FrozenHedge(
+        scaler_mean=scaler.mean_,
+        scaler_scale=scaler.scale_,
+        pca_components=pca.components_,
+        pca_mean=pca.mean_,
+        ridge_coef=ridge.coef_,
+        ridge_intercept=float(ridge.intercept_),
+    )
+
+
+def score_normalized_direction(x: np.ndarray, hedge: FrozenHedge) -> np.ndarray:
+    """고정된 계수로만 transform·predict한다 — 재학습 없음(walk-forward 고정 헤지)."""
+    x_scaled = (x - hedge.scaler_mean) / hedge.scaler_scale
+    x_centered = x_scaled - hedge.pca_mean
+    x_pca = x_centered @ hedge.pca_components.T
+    return x_pca @ hedge.ridge_coef + hedge.ridge_intercept
+
+
+def score_raw_residual(residual_vectors: np.ndarray) -> np.ndarray:
+    """PCA·Ridge를 거치지 않는 원시 신호. signed L2 norm으로 방향+크기를 보존한다.
+
+    실제 raw residual 산식은 임베딩 공간의 특정 대조 방향을 쓸 수 있으나,
+    여기서는 부호(평균 성분의 부호)와 크기(L2 norm)를 함께 보존하는 근사치를 쓴다.
+    """
+    sign = np.sign(residual_vectors.mean(axis=1))
+    sign[sign == 0] = 1.0
+    return sign * np.linalg.norm(residual_vectors, axis=1)
+
+
+def aggregate_company_to_sector(
+    company_scores: dict[str, float], sector_of: dict[str, str]
+) -> dict[str, float]:
+    """기업 먼저, 섹터 나중 — 섹터 내 기업은 동일 가중 평균(시가총액이 신호를 지배하지 않음)."""
+    buckets: dict[str, list[float]] = {}
+    for code, score in company_scores.items():
+        sector = sector_of.get(code)
+        if sector is None:
+            continue
+        buckets.setdefault(sector, []).append(score)
+    return {sector: float(np.mean(scores)) for sector, scores in buckets.items()}
+
+
+def rank_sectors(
+    sector_scores: dict[str, float], min_sectors: int = MIN_ELIGIBLE_SECTORS
+) -> list[dict] | None:
+    """섹터 점수를 정렬하고 최고점 대비 비율로 정규화한다. 최소 섹터 수 미달이면 None."""
+    if len(sector_scores) < min_sectors:
+        return None
+
+    ranked = sorted(sector_scores.items(), key=lambda kv: kv[1], reverse=True)
+    top_score = ranked[0][1]
+    denom = top_score if top_score > 0 else 1.0
+
+    return [
+        {"sector": sector, "raw_score": score, "normalized_score": round(score / denom, 3)}
+        for sector, score in ranked
+    ]
+
+
+def ensemble_rank(per_length_rankings: list[list[dict]]) -> list[dict]:
+    """128/160/200단어 세 모델의 정규화 점수를 평균해 최종 순위를 만든다."""
+    accum: dict[str, list[float]] = {}
+    for ranking in per_length_rankings:
+        for row in ranking:
+            accum.setdefault(row["sector"], []).append(row["normalized_score"])
+
+    averaged = {sector: float(np.mean(scores)) for sector, scores in accum.items()}
+    ranked = sorted(averaged.items(), key=lambda kv: kv[1], reverse=True)
+    return [{"sector": sector, "score": round(score, 3)} for sector, score in ranked]
+
+
+def run_sector_ranking(as_of: date, leading_sector_seed: str = "Energy") -> dict:
+    """세 passage 길이 모델을 각각 고정 헤지로 학습·적용하고 앙상블 순위를 낸다.
+
+    leading_sector_seed는 합성 데이터에 심는 신호일 뿐, 실제로 그 섹터가
+    1위로 나오는지는 아래 계산이 실제로 판단한다(하드코딩된 결과가 아니다).
+    """
+    seed = as_of.toordinal()
+
+    normalized_rankings: list[list[dict]] = []
+    raw_rankings: list[list[dict]] = []
+
+    for passage_length in PASSAGE_LENGTHS:
+        x_hist, y_hist = generate_frozen_hedge_training_set(seed, leading_sector_seed, passage_length)
+        hedge = fit_frozen_hedge(x_hist, y_hist)
+
+        current = generate_current_residuals(seed, leading_sector_seed, passage_length)
+        codes = list(current.keys())
+        x_current = np.array([current[c] for c in codes])
+
+        normalized_scores = score_normalized_direction(x_current, hedge)
+        raw_scores = score_raw_residual(x_current)
+
+        company_normalized = dict(zip(codes, normalized_scores))
+        company_raw = dict(zip(codes, raw_scores))
+
+        sector_normalized = aggregate_company_to_sector(company_normalized, SECTOR_OF_COMPANY)
+        sector_raw = aggregate_company_to_sector(company_raw, SECTOR_OF_COMPANY)
+
+        ranked_normalized = rank_sectors(sector_normalized)
+        ranked_raw = rank_sectors(sector_raw)
+
+        if ranked_normalized is None or ranked_raw is None:
+            continue
+        normalized_rankings.append(ranked_normalized)
+        raw_rankings.append(ranked_raw)
+
+    if len(normalized_rankings) < len(PASSAGE_LENGTHS):
+        return {"eligible": False, "reason": f"최소 {MIN_ELIGIBLE_SECTORS}개 섹터 미충족"}
+
+    return {
+        "eligible": True,
+        "normalized_direction": ensemble_rank(normalized_rankings),
+        "raw_residual": ensemble_rank(raw_rankings),
+        "model_agreement": {
+            str(length): ranking[0]["sector"]
+            for length, ranking in zip(PASSAGE_LENGTHS, normalized_rankings)
+        },
+    }
 
 
 def _tone(value: float | None) -> str | None:
@@ -44,23 +213,55 @@ def _mtd_return(db: Session, asset_id: int, as_of: date) -> float | None:
     return float(end_row.adj_close / start_row.adj_close - 1) * 100
 
 
-def build_callrank_context(db: Session, as_of: date, leading_asset_code: str = "XLE") -> dict:
-    asset = db.query(DimAsset).filter_by(code=leading_asset_code).first()
+def build_callrank_context(db: Session, as_of: date, leading_sector_seed: str = "Energy") -> dict:
+    ranking = run_sector_ranking(as_of, leading_sector_seed)
 
+    if not ranking["eligible"]:
+        return {
+            "as_of": as_of.isoformat(),
+            "generated_at": as_of.isoformat(),
+            "cards": [{"label": "섹터 랭킹", "value": "판단 보류", "caption": ranking["reason"], "tone": None}],
+            "ranking_rows": [],
+            "cross_check_rows": [],
+        }
+
+    top_sector = ranking["normalized_direction"][0]["sector"]
+    top_etf_code = SECTOR_ETF_BY_NAME[top_sector]
+
+    asset = db.query(DimAsset).filter_by(code=top_etf_code).first()
     mtd_return = _mtd_return(db, asset.asset_id, as_of) if asset else None
-    asset_label = asset.name_kr if asset else leading_asset_code
 
     cards = [
         {
-            "label": f"{as_of.month}월 MTD {asset_label}",
+            "label": f"{as_of.month}월 잠정 1위 섹터",
+            "value": f"{top_sector}({top_etf_code})",
+            "caption": "정규화 방향·Raw residual 앙상블 평균 기준",
+            "tone": "up",
+        },
+        {
+            "label": f"{as_of.month}월 MTD {top_etf_code}",
             "value": f"{mtd_return:+.2f}%" if mtd_return is not None else "데이터 없음",
-            "caption": f"{leading_asset_code} 보유 경로 · fact_market_daily 기준",
+            "caption": "fact_market_daily 실측 (시드 데이터가 있는 자산만 표시)",
             "tone": _tone(mtd_return),
         },
+    ]
+
+    ranking_rows = [
+        [str(i + 1), row["sector"], f"{row['score']:.3f}"]
+        for i, row in enumerate(ranking["normalized_direction"][:5])
+    ]
+    cross_check_rows = [
+        [str(i + 1), n["sector"], f"{n['score']:.3f}", r["sector"], f"{r['score']:.3f}"]
+        for i, (n, r) in enumerate(
+            zip(ranking["normalized_direction"][:5], ranking["raw_residual"][:5])
+        )
     ]
 
     return {
         "as_of": as_of.isoformat(),
         "generated_at": as_of.isoformat(),
         "cards": cards,
+        "ranking_rows": ranking_rows,
+        "cross_check_rows": cross_check_rows,
+        "model_agreement": ranking["model_agreement"],
     }

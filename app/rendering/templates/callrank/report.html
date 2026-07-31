@@ -12,36 +12,64 @@
   <div class="page-body">
     {{ report_header(
       "CALLRANK OPERATING BRIEF",
-      "7월 운용 점검 및 8월 잠정 결정",
-      "실제 중첩 슬리브 성과와 7월 부분월 콜 순위를 함께 본다.",
+      as_of[:7] ~ " 섹터 랭킹 및 잠정 방향",
+      "128·160·200단어 passage 3개 모델의 정규화 방향·Raw residual 앙상블 평균을 함께 본다.",
       ["시장 종가 기준 " ~ as_of, "FMP 조회 기준 " ~ as_of, "작성 " ~ generated_at]
     ) }}
 
-    {{ callout_box(
-      "info",
-      "AUGUST 2026 PROVISIONAL DIRECTION — XLE(에너지)",
-      "운용에 사용하는 정규화 방향과 정보 확인용 raw residual이 모두 에너지를 1위로 둔다."
-    ) }}
-
     {{ metric_cards(cards) }}
+
+    {% if ranking_rows %}
+    <table class="data-table">
+      <thead>
+        <tr><th>순위</th><th>섹터</th><th>정규화 방향 점수</th></tr>
+      </thead>
+      <tbody>
+        {% for row in ranking_rows %}
+        <tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
   </div>
-  {{ report_footer("자료: FMP earnings-call transcripts · Yahoo Finance adjusted ETF closes") }}
+  {{ report_footer("자료: FMP earnings-call transcripts(합성 데이터) · Yahoo Finance adjusted ETF closes") }}
 </div>
 
 <div class="page">
   <div class="top-bar"></div>
   <div class="page-body">
     {{ report_header(
-      "WHAT AND WHY",
-      "CallRank는 무엇을 보는가",
-      "기업이 평소 하던 말에서 이번 Q&A가 어느 방향으로 달라졌는지 섹터 단위로 모은다.",
-      ["팀 공유용 개념 설명", "모델 수식보다 판단 논리 중심"]
+      "DECISION EVIDENCE",
+      "두 표현의 잠정 상위 순위",
+      "정규화 방향(운용용)과 raw residual(정보 확인용)이 같은 섹터를 가리키는지 교차검증한다.",
+      ["점수는 확률이 아니라 세 passage 모델의 평균 활립 순위"]
     ) }}
+
+    {% if cross_check_rows %}
+    <table class="data-table">
+      <thead>
+        <tr><th>순위</th><th>정규화 방향</th><th>점수</th><th>Raw residual</th><th>점수</th></tr>
+      </thead>
+      <tbody>
+        {% for row in cross_check_rows %}
+        <tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+
+    {% if model_agreement %}
+    {{ callout_box(
+      "info",
+      "모델 간 일치",
+      "128/160/200단어 세 모델이 각각 1위로 지목한 섹터: " ~ (model_agreement.values() | list | join(" · "))
+    ) }}
+    {% endif %}
 
     {{ callout_box(
       "warning",
       "운용 해석",
-      "현재 8월 방향은 지금 XLE(에너지)를 추가 매수하라는 신호가 아니라, 7월 전체 콜을 월말에 다시 계산했을 때 유지되는지를 확인할 후보다."
+      "이 순위는 지금 1위 섹터를 추가 매수하라는 신호가 아니라, 월 전체 콜을 월말에 다시 계산했을 때 유지되는지를 확인할 후보다."
     ) }}
   </div>
   {{ report_footer("핵심 측정치: firm-conditioned signed Q&A residual") }}
