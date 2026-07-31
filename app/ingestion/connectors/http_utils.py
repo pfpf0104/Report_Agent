@@ -51,6 +51,7 @@ async def request_with_retry(
     url: str,
     *,
     params: dict | None = None,
+    headers: dict | None = None,
     max_retries: int = 3,
     base_delay: float = 1.0,
     timeout: float = 10.0,
@@ -60,17 +61,18 @@ async def request_with_retry(
 
     4xx는 요청 자체가 잘못된 것이므로 재시도하지 않고 바로 반환한다(호출부가
     response.raise_for_status()로 처리). 5xx·타임아웃·연결 오류만 지수 백오프로
-    재시도한다.
+    재시도한다. headers는 KIS처럼 Authorization/appkey 등 커스텀 헤더가
+    필요한 API를 위한 것이며, 기본 User-Agent와 병합된다(호출부 값이 우선).
     """
     if method.upper() != "GET":
         raise ValueError("GET 요청만 허용한다(데이터 변경 API 호출 금지)")
 
+    merged_headers = {"User-Agent": USER_AGENT, **(headers or {})}
+
     last_exc: Exception | None = None
     for attempt in range(1, max_retries + 1):
         try:
-            response = await client.get(
-                url, params=params, timeout=timeout, headers={"User-Agent": USER_AGENT}
-            )
+            response = await client.get(url, params=params, timeout=timeout, headers=merged_headers)
             if response.status_code >= 500:
                 raise httpx.HTTPStatusError(
                     f"서버 오류 {response.status_code}", request=response.request, response=response
