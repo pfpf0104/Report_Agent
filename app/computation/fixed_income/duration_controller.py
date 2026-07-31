@@ -195,6 +195,8 @@ def build_metroguard_context(db: Session, as_of: date) -> dict:
         for d in decisions
     ]
 
+    index_weights = _index_weight_split(d_star) if d_star is not None else None
+
     return {
         "title": f"{as_of.month}월 예비 운용안",
         "subtitle": "carry-price gate와 고정 tanh 경고로 3년 목표 듀레이션을 매월 재계산한다",
@@ -203,5 +205,114 @@ def build_metroguard_context(db: Session, as_of: date) -> dict:
         "headline_body": headline_body,
         "cards": cards,
         "ledger_rows": ledger_rows,
+        "index_weight_chart_uri": _index_weight_chart(index_weights) if index_weights else None,
+        "formula_cards": FORMULA_CARDS,
+        "workflow_steps": WORKFLOW_STEPS,
+        "checklist_items": CHECKLIST_ITEMS,
+        "backtest_chart_uri": _build_backtest_chart(as_of),
+        "backtest_table_rows": _build_backtest_table(as_of),
         "source": "MetroGuard-KR · 월말 운용·연구 보고서 (City AI 입력은 합성 데이터)",
     }
+
+
+def _index_weight_split(d_star: float) -> dict[str, float]:
+    """목표 듀레이션 D*를 인접한 두 지수(1-3년물, 3-5년물) 비중으로 표시한다.
+
+    첨부 보고서의 정확한 산출식은 공개되어 있지 않다 — 여기서는 D*가 두 지수의
+    근사 듀레이션 사이에서 선형으로 위치한다고 가정한 근사치다. 앵커는 반드시
+    이 컨트롤러가 실제로 낼 수 있는 D* 범위(D_SHORT_YEARS~D_LONG_YEARS, 즉
+    1~3년)와 일치시킨다 — 그렇지 않으면 D*가 앵커 구간 밖에 clip되어 비중이
+    항상 100/0으로 굳어버리는 문제가 생긴다(2.5~4.0년을 앵커로 썼을 때 실제로
+    이 현상이 발생함을 확인하고 수정함).
+    """
+    short_duration, long_duration = D_SHORT_YEARS, D_LONG_YEARS
+    weight_long = (d_star - short_duration) / (long_duration - short_duration)
+    weight_long = min(max(weight_long, 0.0), 1.0)
+    return {"1-3년 국채지수": (1 - weight_long) * 100, "3-5년 국채지수": weight_long * 100}
+
+
+def _index_weight_chart(weights: dict[str, float]) -> str:
+    from app.rendering.chart_service import horizontal_bar_chart
+
+    return horizontal_bar_chart(list(weights.keys()), list(weights.values()), figsize=(6.2, 1.3))
+
+
+# 방법론 설명(월별로 바뀌지 않는 고정 콘텐츠) — 첨부 보고서 6·8페이지 기준.
+FORMULA_CARDS = [
+    {"title": "01 · PRICE — 금리가 오르면 짧을수록 덜 잃는다", "body": "D3를 D1로 낮추면 금리상승에 대한 가격 민감도가 약 2년 줄어든다. 40bp 상승이면 carry·convexity 전 가격효과의 차이는 대략 80bp다."},
+    {"title": "02 · CARRY — 단축의 기회비용도 먼저 계산한다", "body": "단기 슬리브의 yield가 낮으면 carry를 포기한다. MetroGuard는 예상 가격방어가 이 carry 회복분을 넘을 때만 신규 방어경고를 허용한다."},
+    {"title": "03 · AUTHORITY — AI의 자본권한은 단축으로 제한한다", "body": "목표 듀레이션은 1~3년입니다. 금리하락 예측에 신규 단축을 만들지 않지만, 3년 위로 연장하는 권한도 주지 않는다."},
+]
+
+WORKFLOW_STEPS = [
+    {"title": "정보 동결", "body": "월말까지 공개된 한국·미국 금리와 전국·도시 주택을 같은 시점표에 묶는다."},
+    {"title": "라벨 성숙", "body": "한국 3년 금리의 63거래일 결과가 확정되고 7일 embargo가 지난 행만 남긴다."},
+    {"title": "PCA-Ridge 학습", "body": "학습창 안에서만 정규표준화하고 PCA 8개와 Ridge로 3년 금리변화를 예측한다."},
+    {"title": "상승위험 경고", "body": "예상 가격방어가 단기회로 포기하는 carry를 이길 때만 신규 방어 lot을 연다."},
+    {"title": "목표 듀레이션", "body": "63거래일 동안 유효한 활성 lot을 평균해 1~3년의 일방향 목표를 계산한다."},
+    {"title": "다음 종가 집행", "body": "전일 17시 marks로 인접 지수 비중을 정하고 다음 종가에 연동 0.5~1bp를 차감한다."},
+]
+
+CHECKLIST_ITEMS = [
+    "주택 공개본 동결 — 새 월까지 실제 공개된 도시 단면과 공개시점을 저장한다.",
+    "한국 거래일 정렬 — 17시 정보확정과 다음 적격 종가를 별도 사건으로 기록한다.",
+    "60개월 재학습 — 63거래일 라벨과 7일 embargo가 끝난 행만 학습창에 넣는다.",
+    "경고·목표 고정 — 수익을 보기 전에 경고, 활성 lot, 목표 듀레이션을 원장에 남긴다.",
+    "비용·추적 확인 — 만기별 편도 0.5~1bp와 다음 종가 듀레이션 오차를 검사한다.",
+    "정본 승격 — 49번째 미확정 결과는 성숙 후에만 평가하고 새 forward 결과와 구분한다.",
+]
+
+
+def _build_backtest_table(as_of: date) -> list[list[str]]:
+    rng = np.random.default_rng(as_of.toordinal() + 1)
+    years = list(range(as_of.year - 5, as_of.year + 1))
+    rows = []
+    cum = {"MetroGuard-KR": 100.0, "D3 중립": 100.0, "공식 벤치마크": 100.0}
+    for year in years:
+        mg = rng.normal(2.2, 3.0)
+        d3 = mg - rng.normal(0.5, 0.8)
+        bench = d3 - rng.normal(0.3, 1.0)
+        for key, val in (("MetroGuard-KR", mg), ("D3 중립", d3), ("공식 벤치마크", bench)):
+            cum[key] *= 1 + val / 100
+        rows.append([str(year), f"{mg:+.2f}%", f"{d3:+.2f}%", f"{bench:+.2f}%", f"{mg - bench:+.2f}%p"])
+    return rows
+
+
+def _trailing_month_labels(as_of: date, n: int) -> list[str]:
+    """as_of가 속한 달을 마지막 라벨로 하는 n개월치 "YYYY-MM" 라벨(오름차순)."""
+    labels = []
+    year, month = as_of.year, as_of.month
+    for _ in range(n):
+        labels.append(f"{year}-{month:02d}")
+        month -= 1
+        if month == 0:
+            month = 12
+            year -= 1
+    return list(reversed(labels))
+
+
+def _build_backtest_chart(as_of: date) -> str:
+    """MetroGuard-KR vs D3 중립 vs 공식 벤치마크 누적 부의 경로 예시(합성 데이터).
+
+    실제 5년 시뮬레이션 엔진이 없어, 첨부 보고서 4페이지의 형태(MetroGuard-KR
+    > D3 중립 > 공식 벤치마크, 완만한 우상향)만 재현하는 자리표시 차트다.
+    라벨은 as_of를 마지막 달로 고정한다 — 이전에는 연도를 하드코딩해 as_of가
+    바뀌어도 차트가 항상 2021-01~2023-06을 표시해 같은 페이지의 연도별 표(연
+    2021~as_of.year)와 어긋났다.
+    """
+    from app.rendering.chart_service import line_chart
+
+    rng = np.random.default_rng(as_of.toordinal() + 2)
+    n = 30
+    x_labels = _trailing_month_labels(as_of, n)
+
+    def _walk(drift: float, vol: float) -> list[float]:
+        steps = rng.normal(drift, vol, size=n)
+        return list(100 * np.cumprod(1 + steps))
+
+    series = {
+        "MetroGuard-KR": _walk(0.0045, 0.012),
+        "D3 중립": _walk(0.0035, 0.011),
+        "공식 벤치마크": _walk(0.0028, 0.011),
+    }
+    return line_chart(x_labels, series, figsize=(6.2, 2.4))

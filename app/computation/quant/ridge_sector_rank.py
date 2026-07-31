@@ -309,16 +309,32 @@ BACKTEST_SUMMARY = [
 ]
 
 
+def _trailing_month_labels(as_of: date, n: int) -> list[str]:
+    """as_of가 속한 달을 마지막 라벨로 하는 n개월치 "YYYY-MM" 라벨(오름차순)."""
+    labels = []
+    year, month = as_of.year, as_of.month
+    for _ in range(n):
+        labels.append(f"{year}-{month:02d}")
+        month -= 1
+        if month == 0:
+            month = 12
+            year -= 1
+    return list(reversed(labels))
+
+
 def _build_backtest_chart(as_of: date) -> str:
     """연구 백테스트 누적 성과 예시 차트. 실제 이력 데이터가 없어 결정적 시드로
     그럴듯한 곡선을 만든다 — 첨부 보고서 4페이지의 형태(Top1 > SPY > Bottom1,
     셋 다 100에서 시작해 우상향)만 재현하는 자리표시 차트다.
+    라벨은 as_of를 마지막 달로 고정한다 — 이전에는 연도를 하드코딩해 as_of가
+    바뀌어도 차트가 항상 2024-01~2025-12를 표시해 헤더의 "2023-12 ~ as_of"
+    설명과 어긋났다.
     """
     from app.rendering.chart_service import line_chart
 
     rng = np.random.default_rng(as_of.toordinal())
     n = 24
-    x_labels = [f"{2024 + i // 12}-{(i % 12) + 1:02d}" for i in range(n)]
+    x_labels = _trailing_month_labels(as_of, n)
 
     def _walk(drift: float, vol: float) -> list[float]:
         steps = rng.normal(drift, vol, size=n)

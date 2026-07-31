@@ -3,6 +3,8 @@
 {% from "partials/footer.html" import report_footer %}
 {% from "partials/metric_cards.html" import metric_cards %}
 {% from "partials/callout_box.html" import callout_box %}
+{% from "partials/info_cards.html" import info_cards %}
+{% from "partials/process_steps.html" import process_steps %}
 
 {% block title %}MetroGuard-KR Operating Report{% endblock %}
 
@@ -13,6 +15,12 @@
     {{ report_header("METROGUARD-KR · MONTH-END OPERATING REPORT", title, subtitle, meta_lines) }}
     {{ callout_box("info", headline, headline_body) }}
     {{ metric_cards(cards) }}
+
+    {% if index_weight_chart_uri %}
+    <div style="margin-top:10px; font-weight:700; font-size:9.5px; color:#1f2933;">목표 듀레이션을 두 인접 지수 비중으로 표시</div>
+    <img src="{{ index_weight_chart_uri }}" style="width:100%; margin-top:4px;">
+    <div class="chart-caption">근사치 — 목표 듀레이션을 인접 두 지수 듀레이션 사이 선형 비중으로 환산</div>
+    {% endif %}
 
     {% if ledger_rows %}
     <table class="data-table">
@@ -26,6 +34,102 @@
       </tbody>
     </table>
     {% endif %}
+  </div>
+  {{ report_footer(source) }}
+</div>
+
+<div class="page">
+  <div class="top-bar"></div>
+  <div class="page-body">
+    {{ report_header(
+      "WHY IT WORKS IN A RATE-HIKE REGIME",
+      "왜 금리상승기에 쓰는가",
+      "MetroGuard-KR의 일방향 방어 메커니즘",
+      ["운용 판단용 1차 근거"]
+    ) }}
+
+    {{ callout_box(
+      "info",
+      "총수익 ≈ carry + roll − D × Δy + ½ × convexity × (Δy)²",
+      "D는 수정듀레이션, Δy는 보유기간 중 금리변화다. 핵심은 Δy가 양(+)일 때 −D×Δy 손실로 작동한다는 점이다."
+    ) }}
+
+    {{ info_cards(formula_cards) }}
+  </div>
+  {{ report_footer("운용 논리 참고: 한국은행 2022년 4월 통화정책결정, 2024년 8월 통화정책결정, BIS Working Paper 1195") }}
+</div>
+
+<div class="page">
+  <div class="top-bar"></div>
+  <div class="page-body">
+    {{ report_header(
+      "MONTH-END WORKFORWARD",
+      "월말 워크포워드 절차",
+      "City AI, 비학습 컨트롤러, MetroGuard-KR의 역할을 분리",
+      ["고정 60개월 · 63거래일 목표"]
+    ) }}
+
+    {{ process_steps(workflow_steps) }}
+
+    {{ callout_box(
+      "warning",
+      "예비 신호의 권한",
+      "이 shadow 결과에는 자본배분 권한이 없고 주문도 생성하지 않는다. 공식 러너를 다시 실행하고 승인된 목표만 다음 종가에 반영한다."
+    ) }}
+  </div>
+  {{ report_footer("동결 연구는 2026년 6월 30일까지의 비용 반영 지수 슬리브 시뮬레이션") }}
+</div>
+
+<div class="page">
+  <div class="top-bar"></div>
+  <div class="page-body">
+    {{ report_header(
+      "PERFORMANCE AND RISK DEFENSE",
+      "성과와 위험방어",
+      "비용 후 지수 슬리브 시뮬레이션 (합성 예시 — 실제 운용 이력 아님)",
+      ["단순 Sharpe = 연환산 평균수익 / 연환산 변동성"]
+    ) }}
+
+    <img src="{{ backtest_chart_uri }}" style="width:100%; margin: 6px 0 2px;">
+    <div class="chart-caption">합성 예시 데이터 — 실제 백테스트 결과가 아닙니다.</div>
+
+    {% if backtest_table_rows %}
+    <table class="data-table">
+      <thead>
+        <tr><th>연도</th><th>MetroGuard-KR</th><th>D3 중립</th><th>공식 벤치마크</th><th>벤치마크 대비</th></tr>
+      </thead>
+      <tbody>
+        {% for row in backtest_table_rows %}
+        <tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </div>
+  {{ report_footer("누적지수는 100 기준 · 부분연도 포함") }}
+</div>
+
+<div class="page">
+  <div class="top-bar"></div>
+  <div class="page-body">
+    {{ report_header(
+      "NEXT MONTH-END CHECKLIST",
+      "다음 월말 확정 체크리스트",
+      "forward refresh 전까지 현재 상태 유지",
+      ["실질 방어경고만 집계"]
+    ) }}
+
+    <ul style="margin: 12px 0; padding-left: 18px; font-size: 9.5px; line-height: 2.0;">
+      {% for item in checklist_items %}
+      <li>{{ item }}</li>
+      {% endfor %}
+    </ul>
+
+    {{ callout_box(
+      "info",
+      "증거 경계",
+      "동결 성과는 비용 반영 지수 슬리브 시뮬레이션이며 사전등록된 실시간 운용 기록이 아니다. 현재 대시보드의 월별 운용 추적값과 구분한다."
+    ) }}
   </div>
   {{ report_footer(source) }}
 </div>
