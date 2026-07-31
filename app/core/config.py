@@ -16,7 +16,17 @@ class Settings(BaseSettings):
     r2_bucket_name: str | None = None
     r2_public_base_url: str | None = None  # 커스텀 도메인 또는 <bucket>.r2.dev
 
-    model_config = SettingsConfigDict(env_file=".env", env_prefix="REPORT_AGENT_")
+    # 실데이터 인제스천용(ingestion/connectors, 아직 미구현 — 키가 채워지면 연결 작업 진행).
+    dart_api_key: str | None = None  # 금융감독원 전자공시(DART) OpenAPI
+    bok_api_key: str | None = None  # 한국은행 ECOS OpenAPI
+    kis_app_key: str | None = None  # 한국투자증권 OpenAPI
+    kis_app_secret: str | None = None
+
+    # .env는 커밋되는 예시/기본값용, .env.local은 실제 비밀값(gitignore 대상)용.
+    # 두 파일 다 있으면 .env.local이 나중에 로드되어 .env 값을 덮어쓴다.
+    model_config = SettingsConfigDict(
+        env_file=(".env", ".env.local"), env_file_encoding="utf-8", env_prefix="REPORT_AGENT_"
+    )
 
 
 settings = Settings()
