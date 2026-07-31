@@ -1,0 +1,11 @@
+{# cards: [{title, body}] #}
+{% macro info_cards(cards) %}
+<div class="info-grid">
+  {% for card in cards %}
+  <div class="info-card">
+    <div class="info-card__title">{{ card.title }}</div>
+    <div class="info-card__body">{{ card.body }}</div>
+  </div>
+  {% endfor %}
+</div>
+{% endmacro %}

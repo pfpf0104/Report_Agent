@@ -1,0 +1,12 @@
+{# steps: [{title, body}] — 번호는 1부터 자동 매김 #}
+{% macro process_steps(steps) %}
+<div class="process-grid">
+  {% for step in steps %}
+  <div class="process-step">
+    <div class="process-step__number">{{ "%02d"|format(loop.index) }}</div>
+    <div class="process-step__title">{{ step.title }}</div>
+    <div class="process-step__body">{{ step.body }}</div>
+  </div>
+  {% endfor %}
+</div>
+{% endmacro %}

@@ -70,3 +70,49 @@
   border-color: var(--callout-success-border);
   color: var(--callout-success-text);
 }
+
+/* 프로세스 스텝 카드 내부 타이틀/본문 (레이아웃은 layout.css의 .process-grid/.process-step) */
+.process-step__title {
+  font-weight: 700;
+  font-size: 9.5px;
+  color: #1f2933;
+  margin-bottom: 4px;
+}
+.process-step__body {
+  font-size: 8.5px;
+  color: var(--color-gray-600);
+  line-height: 1.5;
+}
+
+/* 개념 설명용 3열 텍스트 카드 (숫자 대신 제목+본문) */
+.info-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  margin: 14px 0;
+}
+.info-card {
+  padding: 0 16px;
+  border-left: 1px solid var(--color-gray-300);
+}
+.info-card:first-child {
+  border-left: none;
+  padding-left: 0;
+}
+.info-card__title {
+  font-weight: 700;
+  font-size: 9.5px;
+  color: var(--color-navy-900);
+  margin-bottom: 6px;
+}
+.info-card__body {
+  font-size: 8.5px;
+  color: #1f2933;
+  line-height: 1.6;
+}
+
+.chart-caption {
+  font-size: 8px;
+  color: var(--color-gray-600);
+  text-align: right;
+  margin-top: -6px;
+}

@@ -223,6 +223,11 @@ def build_callrank_context(db: Session, as_of: date, leading_sector_seed: str = 
             "cards": [{"label": "섹터 랭킹", "value": "판단 보류", "caption": ranking["reason"], "tone": None}],
             "ranking_rows": [],
             "cross_check_rows": [],
+            "model_agreement": {},
+            "what_and_why_cards": WHAT_AND_WHY_CARDS,
+            "workflow_steps": PROCESS_STEPS,
+            "backtest_chart_uri": _build_backtest_chart(as_of),
+            "backtest_summary": BACKTEST_SUMMARY,
         }
 
     top_sector = ranking["normalized_direction"][0]["sector"]
@@ -264,4 +269,64 @@ def build_callrank_context(db: Session, as_of: date, leading_sector_seed: str = 
         "ranking_rows": ranking_rows,
         "cross_check_rows": cross_check_rows,
         "model_agreement": ranking["model_agreement"],
+        "what_and_why_cards": WHAT_AND_WHY_CARDS,
+        "workflow_steps": PROCESS_STEPS,
+        "backtest_chart_uri": _build_backtest_chart(as_of),
+        "backtest_summary": BACKTEST_SUMMARY,
     }
+
+
+# 방법론 설명(월별로 바뀌지 않는 고정 콘텐츠) — 첨부 CallRank 보고서 2페이지 기준.
+WHAT_AND_WHY_CARDS = [
+    {
+        "title": "1. 기업마다 원래 말투가 다르다",
+        "body": "제품명, 경영진 이름, 회계용어와 반복 설명이 매 분기 들어온다. 다른 기업과 바로 비교하면 이런 고정된 정체성이 신호처럼 보일 수 있어, 자기 과거를 기준선으로 삼는다.",
+    },
+    {
+        "title": '2. "얼마나"보다 "어느 쪽으로"가 중요하다',
+        "body": "두 기업이 과거에서 같은 거리만큼 달라져도 요구·비용·투자·규제에 관한 방향은 반대일 수 있다. CallRank는 변화량의 부호와 방향을 보존한다.",
+    },
+    {
+        "title": "3. 큰 기업 한 곳이 섹터를 지배하지 않는다",
+        "body": "운용형에서는 기업별 변화 벡터를 동일 가중으로 바꿔 한 기업당 한 표를 준다. transcript 길이나 변화 크기보다 여러 기업이 가리키는 공통 방향을 본다.",
+    },
+]
+
+# 월말 워크포워드 절차(고정 6단계) — 첨부 보고서 3페이지 기준.
+PROCESS_STEPS = [
+    {"title": "콜 원장 확인", "body": "기업 identity, 실제 콜 월, 당시 S&P 500 편입과 섹터를 확인한다."},
+    {"title": "세 길이로 읽기", "body": "Q&A를 128·160·200단어 passage로 나눠 고정 SEC-BERT로 임베딩한다."},
+    {"title": "기업의 정상상태 제거", "body": "현재 벡터에서 같은 기업의 이전 Q&A 평균을 빼 부호 있는 잔차를 만든다."},
+    {"title": "기업 먼저, 섹터 나중", "body": "기업별 한 표를 동일 가중한 뒤 섹터 벡터를 만든다. 시가총액이 신호를 지배하지 않는다."},
+    {"title": "고정 헤지로 순위화", "body": "pre-2021 자료로 정한 표준화·PCA-32·Ridge 계수를 이후 매월 그대로 적용한다."},
+    {"title": "세 모델의 순위 평균", "body": "세 passage 길이의 섹터 순위를 평균하고, 최소 6개 섹터가 있어야 거래 결정을 연다."},
+]
+
+BACKTEST_SUMMARY = [
+    {"label": "Top 1 연환산 순수익률", "value": "42.1%", "caption": "연구 백테스트(합성 예시)"},
+    {"label": "같은 기간 SPY(S&P 500)", "value": "24.0%", "caption": "연구 백테스트(합성 예시)"},
+    {"label": "Treasury 조정 Sharpe", "value": "2.05", "caption": "연구 백테스트(합성 예시)"},
+]
+
+
+def _build_backtest_chart(as_of: date) -> str:
+    """연구 백테스트 누적 성과 예시 차트. 실제 이력 데이터가 없어 결정적 시드로
+    그럴듯한 곡선을 만든다 — 첨부 보고서 4페이지의 형태(Top1 > SPY > Bottom1,
+    셋 다 100에서 시작해 우상향)만 재현하는 자리표시 차트다.
+    """
+    from app.rendering.chart_service import line_chart
+
+    rng = np.random.default_rng(as_of.toordinal())
+    n = 24
+    x_labels = [f"{2024 + i // 12}-{(i % 12) + 1:02d}" for i in range(n)]
+
+    def _walk(drift: float, vol: float) -> list[float]:
+        steps = rng.normal(drift, vol, size=n)
+        return list(100 * np.cumprod(1 + steps))
+
+    series = {
+        "Top 1": _walk(0.028, 0.05),
+        "SPY(S&P 500)": _walk(0.017, 0.035),
+        "Bottom 1": _walk(0.006, 0.05),
+    }
+    return line_chart(x_labels, series, figsize=(6.2, 2.4))

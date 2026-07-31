@@ -1,0 +1,143 @@
+"""matplotlib 차트를 렌더링해 <img src="..."> 에 바로 쓰는 base64 PNG data URI로 반환한다.
+
+색상은 app/core/design_tokens.py의 CHART_PALETTE를 그대로 쓴다 — HTML/CSS와
+차트 색상이 어긋나지 않도록 하는 SSOT 규칙(그 파일 docstring 참고).
+"""
+from __future__ import annotations
+
+import base64
+import io
+import math
+
+import matplotlib
+
+matplotlib.use("Agg")
+import matplotlib.font_manager as fm  # noqa: E402
+import matplotlib.pyplot as plt  # noqa: E402
+
+from app.core.design_tokens import CHART_PALETTE, GRAY_300, semantic_color  # noqa: E402
+
+# 한글 라벨 렌더링용. Pretendard는 woff2만 있어 matplotlib이 못 읽으므로
+# HTML/CSS는 Pretendard, 차트는 시스템에 설치된 Noto Sans CJK를 쓴다.
+_KOREAN_FONT_CANDIDATES = [
+    "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+    "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+]
+
+
+def _register_korean_font() -> str | None:
+    for path in _KOREAN_FONT_CANDIDATES:
+        try:
+            fm.fontManager.addfont(path)
+            return fm.FontProperties(fname=path).get_name()
+        except (FileNotFoundError, RuntimeError):
+            continue
+    return None
+
+
+_FONT_NAME = _register_korean_font()
+if _FONT_NAME:
+    plt.rcParams["font.family"] = _FONT_NAME
+plt.rcParams["axes.unicode_minus"] = False
+plt.rcParams["font.size"] = 9
+
+
+def _fig_to_data_uri(fig) -> str:
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", dpi=150, bbox_inches="tight", transparent=True)
+    plt.close(fig)
+    encoded = base64.b64encode(buf.getvalue()).decode("ascii")
+    return f"data:image/png;base64,{encoded}"
+
+
+def line_chart(
+    x_labels: list[str], series: dict[str, list[float]], *, figsize=(6.2, 2.6), max_x_ticks: int = 7
+) -> str:
+    """여러 시리즈를 그린다. 1번째=주력(실선), 2번째=벤치마크(실선), 3번째 이후=점선.
+
+    max_x_ticks: x_labels가 이보다 많으면 등간격으로 골라 겹침을 막는다
+    (첨부 보고서 4페이지처럼 30개월치를 6~7개 라벨로만 표시하는 방식).
+    """
+    fig, ax = plt.subplots(figsize=figsize)
+    colors = CHART_PALETTE["categorical"]
+    linestyles = ["-", "-", "--", ":"]
+    x_positions = range(len(x_labels))
+    for i, (name, values) in enumerate(series.items()):
+        ax.plot(
+            x_positions,
+            values,
+            label=name,
+            color=colors[i % len(colors)],
+            linestyle=linestyles[i % len(linestyles)],
+            linewidth=1.8,
+        )
+
+    if len(x_labels) > max_x_ticks:
+        step = math.ceil(len(x_labels) / max_x_ticks)
+        tick_positions = list(range(0, len(x_labels), step))
+        if tick_positions[-1] != len(x_labels) - 1:
+            tick_positions.append(len(x_labels) - 1)
+    else:
+        tick_positions = list(x_positions)
+    ax.set_xticks(tick_positions, [x_labels[i] for i in tick_positions])
+
+    ax.spines[["top", "right"]].set_visible(False)
+    ax.spines["left"].set_color(GRAY_300)
+    ax.spines["bottom"].set_color(GRAY_300)
+    ax.tick_params(colors="#6b7280", labelsize=8)
+    ax.legend(frameon=False, fontsize=8, loc="upper left")
+    ax.grid(axis="y", color=GRAY_300, linewidth=0.6)
+    fig.tight_layout()
+    return _fig_to_data_uri(fig)
+
+
+def horizontal_bar_chart(
+    labels: list[str], values: list[float], *, figsize=(6.2, 1.6), value_fmt: str = "{:.1f}%"
+) -> str:
+    fig, ax = plt.subplots(figsize=figsize)
+    colors = [CHART_PALETTE["primary"], CHART_PALETTE["secondary"], CHART_PALETTE["tertiary"]]
+    bars = ax.barh(labels, values, color=[colors[i % len(colors)] for i in range(len(labels))], height=0.5)
+    ax.bar_label(bars, labels=[value_fmt.format(v) for v in values], padding=4, fontsize=8, color="#1f2933")
+    ax.spines[:].set_visible(False)
+    ax.set_xticks([])
+    ax.tick_params(axis="y", labelsize=9, colors="#1f2933")
+    ax.invert_yaxis()
+    fig.tight_layout()
+    return _fig_to_data_uri(fig)
+
+
+def vertical_bar_chart(
+    labels: list[str], values: list[float], *, figsize=(6.2, 2.6), value_fmt: str = "{:.0f}", semantic: bool = True
+) -> str:
+    """semantic=True면 부호에 따라 UP/DOWN 색상을 쓰고, False면 categorical[0]로 통일한다."""
+    fig, ax = plt.subplots(figsize=figsize)
+    bar_colors = [semantic_color(v) for v in values] if semantic else CHART_PALETTE["primary"]
+    bars = ax.bar(labels, values, color=bar_colors, width=0.5)
+    ax.bar_label(bars, labels=[value_fmt.format(v) for v in values], padding=4, fontsize=8)
+    ax.spines[["top", "right"]].set_visible(False)
+    ax.spines["left"].set_color(GRAY_300)
+    ax.spines["bottom"].set_color(GRAY_300)
+    ax.tick_params(labelsize=8, colors="#1f2933")
+    ax.axhline(0, color=GRAY_300, linewidth=0.8)
+    fig.tight_layout()
+    return _fig_to_data_uri(fig)
+
+
+def donut_chart(labels: list[str], values: list[float], *, figsize=(4, 4), center_text: str | None = None) -> str:
+    fig, ax = plt.subplots(figsize=figsize)
+    colors = CHART_PALETTE["categorical"]
+    wedges, _ = ax.pie(
+        values,
+        colors=[colors[i % len(colors)] for i in range(len(values))],
+        startangle=90,
+        wedgeprops={"width": 0.38, "edgecolor": "white"},
+    )
+    for wedge, value in zip(wedges, values):
+        angle = math.radians((wedge.theta2 + wedge.theta1) / 2)
+        x, y = math.cos(angle) * 0.82, math.sin(angle) * 0.82
+        ax.text(x, y, f"{value:.1f}%", ha="center", va="center", fontsize=8, color="white", fontweight="bold")
+    if center_text:
+        ax.text(0, 0, center_text, ha="center", va="center", fontsize=11, fontweight="bold", color="#1a2b4c")
+    ax.set_aspect("equal")
+    fig.tight_layout()
+    return _fig_to_data_uri(fig)
