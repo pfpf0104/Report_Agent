@@ -88,13 +88,14 @@
 .info-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
+  row-gap: 12px;
   margin: 14px 0;
 }
 .info-card {
   padding: 0 16px;
   border-left: 1px solid var(--color-gray-300);
 }
-.info-card:first-child {
+.info-card:nth-child(3n + 1) {
   border-left: none;
   padding-left: 0;
 }

@@ -196,6 +196,7 @@ def build_metroguard_context(db: Session, as_of: date) -> dict:
     ]
 
     index_weights = _index_weight_split(d_star) if d_star is not None else None
+    sensitivity_rows = _q_hat_sensitivity_rows(active, latest["gate"].curve_spread_bp)
 
     return {
         "title": f"{as_of.month}월 예비 운용안",
@@ -211,8 +212,38 @@ def build_metroguard_context(db: Session, as_of: date) -> dict:
         "checklist_items": CHECKLIST_ITEMS,
         "backtest_chart_uri": _build_backtest_chart(as_of),
         "backtest_table_rows": _build_backtest_table(as_of),
+        "sensitivity_rows": sensitivity_rows,
+        "glossary_cards": GLOSSARY_CARDS,
         "source": "MetroGuard-KR · 월말 운용·연구 보고서 (City AI 입력은 합성 데이터)",
     }
+
+
+def _q_hat_sensitivity_rows(
+    active_lots: list[DurationLot], curve_spread_bp: float, deltas_bp: tuple[float, ...] = (-20.0, -10.0, 0.0, 10.0, 20.0)
+) -> list[list[str]]:
+    """다음 origin에서 City AI q̂ 예측치가 delta였다면 새 lot의 g와 결합 D*가 어떻게
+    바뀌는지 본다. 현재 활성 lot들의 g는 그대로 두고 신규 lot 하나만 가정한다.
+    커브 스프레드는 가장 최근 관측값으로 고정한다(현재 활성 lot들의 값은 관측된
+    실제 origin의 스프레드를 이미 반영하고 있어 재계산 대상이 아니다).
+    """
+    active_g = [lot.g for lot in active_lots]
+    rows = []
+    for delta in deltas_bp:
+        gate = compute_carry_price_gate(delta, curve_spread_bp, 0.0)
+        g = compute_warning(gate)
+        combined_g = active_g + [g]
+        d_star = D_LONG_YEARS - (D_LONG_YEARS - D_SHORT_YEARS) * float(np.mean(combined_g))
+        rows.append([f"{delta:+.0f}bp", f"{g:.3f}", f"{d_star:.2f}년"])
+    return rows
+
+
+GLOSSARY_CARDS = [
+    {"title": "q̂ (predicted change)", "body": "City AI가 예측한 향후 63거래일간 한국 3년 국채 금리 변화(bp). 양수면 금리 상승 예측이다."},
+    {"title": "A⁻ (carry-price gate)", "body": "3년→1년 단축 시 예상 가격방어분에서 포기하는 carry를 뺀 값(bp). 양수여야 단축을 검토할 근거가 된다."},
+    {"title": "g (경고 강도)", "body": "A⁻를 4개 tanh 척도로 평균한 0~1 사이 값. g=0이면 신규 방어 lot을 열지 않는다."},
+    {"title": "D* (목표 듀레이션)", "body": "63거래일 내 생성된 활성 lot들의 g를 동일가중 평균해 1~3년 사이로 환산한 목표 듀레이션."},
+    {"title": "lot / 활성 lot", "body": "매월 말 생성되는 경고 기록 단위. 생성 후 63거래일(약 3개월) 동안만 목표 듀레이션 계산에 포함된다."},
+]
 
 
 def _index_weight_split(d_star: float) -> dict[str, float]:

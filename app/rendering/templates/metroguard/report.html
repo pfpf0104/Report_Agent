@@ -133,4 +133,49 @@
   </div>
   {{ report_footer(source) }}
 </div>
+
+<div class="page">
+  <div class="top-bar"></div>
+  <div class="page-body">
+    {{ report_header(
+      "SENSITIVITY",
+      "다음 origin의 q̂ 민감도",
+      "다음 월말 City AI 예측치가 바뀌면 신규 lot의 경고와 결합 목표 듀레이션이 어떻게 움직이는지 본다.",
+      ["커브 스프레드는 최근 관측값으로 고정", "기존 활성 lot의 g는 그대로 두고 신규 lot 하나만 가정"]
+    ) }}
+
+    <table class="data-table">
+      <thead>
+        <tr><th>가정 q̂</th><th>신규 lot g</th><th>결합 목표 듀레이션 D*</th></tr>
+      </thead>
+      <tbody>
+        {% for row in sensitivity_rows %}
+        <tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    {{ callout_box(
+      "warning",
+      "해석 유의",
+      "이 표는 신규 lot 하나만 가정한 what-if이며, 기존 활성 lot이 만기 도래로 빠지는 효과는 반영하지 않는다."
+    ) }}
+  </div>
+  {{ report_footer("민감도 분석: 다음 origin q̂ ±20bp 구간") }}
+</div>
+
+<div class="page">
+  <div class="top-bar"></div>
+  <div class="page-body">
+    {{ report_header(
+      "GLOSSARY",
+      "정의와 표기",
+      "본 보고서에서 반복되는 기호와 용어를 한 곳에 모은다.",
+      ["팀 공유 및 신규 인력 온보딩용"]
+    ) }}
+
+    {{ info_cards(glossary_cards) }}
+  </div>
+  {{ report_footer(source) }}
+</div>
 {% endblock %}
