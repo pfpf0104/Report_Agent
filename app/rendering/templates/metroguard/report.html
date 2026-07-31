@@ -13,6 +13,19 @@
     {{ report_header("METROGUARD-KR · MONTH-END OPERATING REPORT", title, subtitle, meta_lines) }}
     {{ callout_box("info", headline, headline_body) }}
     {{ metric_cards(cards) }}
+
+    {% if ledger_rows %}
+    <table class="data-table">
+      <thead>
+        <tr><th>Origin</th><th>q̂ (bp)</th><th>A⁻ (bp)</th><th>g</th><th>상태</th></tr>
+      </thead>
+      <tbody>
+        {% for row in ledger_rows %}
+        <tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
   </div>
   {{ report_footer(source) }}
 </div>
