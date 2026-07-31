@@ -29,5 +29,8 @@ seaborn==0.13.2
 httpx==0.28.1
 apscheduler==3.11.3
 
+# --- Sync (Supabase 서빙 캐시 / Cloudflare R2 PDF 저장) ---
+boto3==1.43.61
+
 # --- Test ---
 pytest==8.3.4
