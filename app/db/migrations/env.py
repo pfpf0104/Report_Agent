@@ -11,6 +11,7 @@ from app.db.models import (  # noqa: F401
     fact_financial_quarterly,
     fact_market_daily,
     fact_real_estate_deal,
+    ingestion_run,
 )
 
 config = context.config
