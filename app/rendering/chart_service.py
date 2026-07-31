@@ -113,6 +113,20 @@ def vertical_bar_chart(
     fig, ax = plt.subplots(figsize=figsize)
     bar_colors = [semantic_color(v) for v in values] if semantic else CHART_PALETTE["primary"]
     bars = ax.bar(labels, values, color=bar_colors, width=0.5)
+    # 막대 라벨이 x축 눈금 라벨과 겹치지 않도록 데이터 바깥쪽으로만 여유를 둔다.
+    # 0은 항상 축 범위에 포함시킨다 — 그렇지 않으면(예: 모두 양수인 값들) 막대
+    # 높이가 크기를 왜곡해 보이는 truncated-axis 문제가 생긴다(실제로 한 번
+    # 발생시켜 확인 후 수정함: +9.4%/+11.7% 막대가 축을 9~12로 자르니 실제
+    # 비율과 다르게 2배 이상 차이나 보였다).
+    data_min, data_max = min(values), max(values)
+    y_lo, y_hi = min(0.0, data_min), max(0.0, data_max)
+    span = (y_hi - y_lo) or 1.0
+    pad = span * 0.18
+    if data_min < 0:
+        y_lo -= pad
+    if data_max > 0:
+        y_hi += pad
+    ax.set_ylim(y_lo, y_hi)
     ax.bar_label(bars, labels=[value_fmt.format(v) for v in values], padding=4, fontsize=8)
     ax.spines[["top", "right"]].set_visible(False)
     ax.spines["left"].set_color(GRAY_300)

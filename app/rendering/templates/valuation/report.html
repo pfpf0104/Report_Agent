@@ -2,6 +2,9 @@
 {% from "partials/header.html" import report_header %}
 {% from "partials/footer.html" import report_footer %}
 {% from "partials/metric_cards.html" import metric_cards %}
+{% from "partials/callout_box.html" import callout_box %}
+{% from "partials/info_cards.html" import info_cards %}
+{% from "partials/process_steps.html" import process_steps %}
 
 {% block title %}한국 주식시장 및 대표 반도체 기업 적정가치 평가{% endblock %}
 
@@ -10,21 +13,215 @@
   <div class="top-bar"></div>
   <div class="page-body">
     {{ report_header("독립 투자분석 보고서", title, subtitle, meta_lines) }}
+    {{ callout_box("info", headline, headline_body) }}
     {{ metric_cards(cards) }}
+
+    <div style="margin-top:10px; font-weight:700; font-size:9.5px; color:#1f2933;">현재가 대비 확률가중 적정가 괴리</div>
+    <img src="{{ comparison_chart_uri }}" style="width:100%; margin-top:4px;">
+  </div>
+  {{ report_footer(source) }}
+</div>
+
+<div class="page">
+  <div class="top-bar"></div>
+  <div class="page-body">
+    {{ report_header(
+      "WHAT AND WHY",
+      "왜 잔여이익모형(RIM)인가",
+      "배수(multiple)가 아니라 장부가치와 초과이익만으로 반도체 기업의 적정가를 역산한다.",
+      ["팀 공유용 개념 설명", "시장 배수 가정을 배제한 밸류에이션"]
+    ) }}
+
+    {{ callout_box(
+      "info",
+      "한 문장으로",
+      "기업가치 = 현재 장부가치 + 향후 5년 초과이익의 현재가치 + 5년차 이후 잔여가치. ROE가 자기자본비용을 넘는 해에만 가치가 쌓인다."
+    ) }}
+
+    {{ info_cards(what_and_why_cards) }}
+  </div>
+  {{ report_footer("핵심 측정치: 확률가중 5년 전환형 잔여이익 적정가") }}
+</div>
+
+<div class="page">
+  <div class="top-bar"></div>
+  <div class="page-body">
+    {{ report_header(
+      "METHODOLOGY",
+      "적정가가 계산되는 3단계",
+      "초과이익, 장부가치 이월, 잔여가치의 순서로 매년 재귀 계산한다.",
+      ["연 단위 명시적 예측 5개년", "Gordon growth 잔여가치"]
+    ) }}
+
+    {{ callout_box(
+      "info",
+      "기업가치 = BV₀ + Σ(t=1..5) 초과이익_t/(1+r)^t + Terminal Value/(1+r)⁵",
+      "r은 자기자본비용, BV₀는 분석 기준 장부가치(BPS)다. 시나리오마다 ROE 경로·지급률·r·정상상태 값이 달라진다."
+    ) }}
+
+    {{ info_cards(formula_cards) }}
+  </div>
+  {{ report_footer("방법론 근거: 5년 전환형 잔여이익모형(RIM)") }}
+</div>
+
+<div class="page">
+  <div class="top-bar"></div>
+  <div class="page-body">
+    {{ report_header(
+      "HOW THE MODEL IS BUILT",
+      "적정가 산출 6단계",
+      "데이터 확보부터 확률가중 평균까지, 두 기업에 동일한 절차를 적용한다.",
+      ["기업별 4개 시나리오 × 5개년"]
+    ) }}
+
+    {{ process_steps(workflow_steps) }}
+
+    {% if weight_donut_chart_uri %}
+    <div style="display:flex; align-items:center; gap:16px; margin-top:10px;">
+      <img src="{{ weight_donut_chart_uri }}" style="width:150px; height:150px; flex-shrink:0;">
+      <div style="font-size:9px; color:#52606d; line-height:1.7;">
+        시나리오 확률가중치(삼성전자·SK하이닉스 공통): 제한적 추격 20% · 점진적 추격 50% · 공격적 추격 25% · 가격전쟁 5%.
+        점진적 추격을 중심 시나리오로 두고 양극단을 낮은 확률로 반영한다.
+      </div>
+    </div>
+    {% endif %}
+  </div>
+  {{ report_footer("확률가중치는 두 기업에 동일하게 적용") }}
+</div>
+
+<div class="page">
+  <div class="top-bar"></div>
+  <div class="page-body">
+    {{ report_header(
+      "SAMSUNG ELECTRONICS",
+      samsung.name ~ " 시나리오별 적정가",
+      "장부가치 " ~ "{:,.0f}".format(samsung.book_value) ~ "원 기준, 자기자본비용은 시나리오별로 9.5~11.5%.",
+      ["현재가 " ~ "{:,.0f}".format(samsung.current_price) ~ "원(" ~ samsung.price_source ~ ")"]
+    ) }}
+
+    {{ metric_cards([
+      {"label": "확률가중 적정가", "value": "{:,.0f}원".format(samsung.fair_value), "caption": "현재가 대비 {:+.1f}%".format(samsung.upside_pct), "tone": "up" if samsung.upside_pct > 0 else "down"},
+      {"label": "기준 시나리오(최대 가중)", "value": samsung.base_scenario.name, "caption": "가중치 {:.0f}%".format(samsung.base_scenario.weight * 100), "tone": None},
+    ]) }}
+
+    <img src="{{ samsung.scenario_chart_uri }}" style="width:100%; margin: 6px 0 2px;">
+    <div class="chart-caption">막대는 현재가 대비 시나리오별 적정가 괴리(%)</div>
+
     <table class="data-table">
       <thead>
-        <tr>
-          {% for col in table.columns %}<th>{{ col }}</th>{% endfor %}
-        </tr>
+        <tr><th>시나리오</th><th>가중치</th><th>적정가격</th><th>현재가 대비</th></tr>
       </thead>
       <tbody>
-        {% for row in table.rows %}
-        <tr>
-          {% for cell in row %}<td>{{ cell }}</td>{% endfor %}
-        </tr>
+        {% for row in samsung.scenario_table_rows %}
+        <tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>
         {% endfor %}
       </tbody>
     </table>
+  </div>
+  {{ report_footer("삼성전자(005930) · 분석 기준 BPS는 보고서 고정값") }}
+</div>
+
+<div class="page">
+  <div class="top-bar"></div>
+  <div class="page-body">
+    {{ report_header(
+      "SK HYNIX",
+      hynix.name ~ " 시나리오별 적정가",
+      "장부가치 " ~ "{:,.0f}".format(hynix.book_value) ~ "원 기준, 자기자본비용은 시나리오별로 10.0~12.0%.",
+      ["현재가 " ~ "{:,.0f}".format(hynix.current_price) ~ "원(" ~ hynix.price_source ~ ")"]
+    ) }}
+
+    {{ metric_cards([
+      {"label": "확률가중 적정가", "value": "{:,.0f}원".format(hynix.fair_value), "caption": "현재가 대비 {:+.1f}%".format(hynix.upside_pct), "tone": "up" if hynix.upside_pct > 0 else "down"},
+      {"label": "기준 시나리오(최대 가중)", "value": hynix.base_scenario.name, "caption": "가중치 {:.0f}%".format(hynix.base_scenario.weight * 100), "tone": None},
+    ]) }}
+
+    <img src="{{ hynix.scenario_chart_uri }}" style="width:100%; margin: 6px 0 2px;">
+    <div class="chart-caption">막대는 현재가 대비 시나리오별 적정가 괴리(%)</div>
+
+    <table class="data-table">
+      <thead>
+        <tr><th>시나리오</th><th>가중치</th><th>적정가격</th><th>현재가 대비</th></tr>
+      </thead>
+      <tbody>
+        {% for row in hynix.scenario_table_rows %}
+        <tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {{ report_footer("SK하이닉스(000660) · 분석 기준 BPS는 보고서 고정값") }}
+</div>
+
+<div class="page">
+  <div class="top-bar"></div>
+  <div class="page-body">
+    {{ report_header(
+      "SENSITIVITY",
+      "자기자본비용 민감도",
+      "기준 시나리오(최대 가중치)의 r을 ±1.0%p 흔들었을 때 적정가가 얼마나 움직이는지 본다.",
+      ["r이 낮을수록 적정가는 더 크게 반응한다"]
+    ) }}
+
+    <div style="font-weight:700; font-size:9.5px; color:#1f2933; margin-bottom:4px;">{{ samsung.name }} — 기준 시나리오: {{ samsung.base_scenario.name }}</div>
+    <table class="data-table">
+      <thead>
+        <tr><th>자기자본비용</th><th>적정가격</th><th>기준 대비</th></tr>
+      </thead>
+      <tbody>
+        {% for row in samsung.sensitivity_table_rows %}
+        <tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <div style="font-weight:700; font-size:9.5px; color:#1f2933; margin:14px 0 4px;">{{ hynix.name }} — 기준 시나리오: {{ hynix.base_scenario.name }}</div>
+    <table class="data-table">
+      <thead>
+        <tr><th>자기자본비용</th><th>적정가격</th><th>기준 대비</th></tr>
+      </thead>
+      <tbody>
+        {% for row in hynix.sensitivity_table_rows %}
+        <tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    {{ callout_box(
+      "warning",
+      "해석 유의",
+      "민감도는 기준 시나리오 하나만 흔든 결과이며, 시나리오 자체가 바뀌는 경우(ROE 경로 재설정)는 반영하지 않는다."
+    ) }}
+  </div>
+  {{ report_footer("민감도 분석: 자기자본비용 ±1.0%p 구간") }}
+</div>
+
+<div class="page">
+  <div class="top-bar"></div>
+  <div class="page-body">
+    {{ report_header(
+      "APPENDIX",
+      "시나리오 가정 및 점검 체크리스트",
+      "두 기업의 시나리오별 자기자본비용·정상상태 ROE·장기성장률 가정을 한 표로 모은다.",
+      ["다음 분기 갱신 시 재계산 대상"]
+    ) }}
+
+    <table class="data-table">
+      <thead>
+        <tr><th>기업</th><th>시나리오</th><th>자기자본비용</th><th>정상상태 ROE</th><th>장기성장률</th></tr>
+      </thead>
+      <tbody>
+        {% for row in assumption_rows %}
+        <tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <ul style="margin: 12px 0; padding-left: 18px; font-size: 9.5px; line-height: 2.0;">
+      {% for item in checklist_items %}
+      <li>{{ item }}</li>
+      {% endfor %}
+    </ul>
   </div>
   {{ report_footer(source) }}
 </div>
