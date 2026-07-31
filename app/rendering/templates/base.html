@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>{% block title %}Report{% endblock %}</title>
+  <link rel="stylesheet" href="{{ static_root }}/css/tokens.css">
+  <link rel="stylesheet" href="{{ static_root }}/css/layout.css">
+  <link rel="stylesheet" href="{{ static_root }}/css/components.css">
+  {% block extra_head %}{% endblock %}
+</head>
+<body>
+  {% block content %}{% endblock %}
+</body>
+</html>

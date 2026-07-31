@@ -1,0 +1,63 @@
+/*
+ * 디자인 토큰(CSS 변수).
+ * 색상 값은 app/core/design_tokens.py 와 반드시 동기화되어야 한다.
+ * (matplotlib 차트와 PDF 색상이 어긋나지 않도록 하는 SSOT 규칙)
+ */
+
+@font-face {
+  font-family: "Pretendard";
+  src: url("../fonts/Pretendard-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: "Pretendard";
+  src: url("../fonts/Pretendard-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: "Noto Sans KR";
+  src: url("../fonts/NotoSansKR-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: "Noto Sans KR";
+  src: url("../fonts/NotoSansKR-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+}
+
+:root {
+  /* 브랜드 / 레이아웃 색상 */
+  --color-navy-900: #1a2b4c;
+  --color-navy-700: #2c4570;
+  --color-gray-600: #6b7280;
+  --color-gray-300: #d7dbe0;
+  --color-gray-100: #f4f5f7;
+
+  /* 시맨틱 색상 (한국 시장 관행: 상승 = 레드, 하락 = 블루) */
+  --color-up: #c0392b;
+  --color-down: #2f6fb0;
+  --color-neutral: var(--color-gray-600);
+
+  /* 콜아웃 박스 */
+  --callout-info-bg: #eaf1fb;
+  --callout-info-border: var(--color-navy-900);
+  --callout-info-text: var(--color-navy-900);
+
+  --callout-warning-bg: #fdf1e0;
+  --callout-warning-border: #c47f2c;
+  --callout-warning-text: #8a5a17;
+
+  --callout-success-bg: #eaf5ec;
+  --callout-success-border: #3f8556;
+  --callout-success-text: #255c39;
+
+  /* 타이포 */
+  --font-family-base: "Pretendard", "Noto Sans KR", sans-serif;
+}

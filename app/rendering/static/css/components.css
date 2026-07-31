@@ -1,0 +1,72 @@
+/*
+ * 재사용 컴포넌트: 테이블(가로선 전용), 뱃지, 콜아웃 박스.
+ */
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0;
+}
+.data-table th {
+  text-align: left;
+  font-size: 8.5px;
+  font-weight: 700;
+  color: var(--color-navy-900);
+  border-bottom: 2px solid var(--color-navy-900);
+  padding: 6px 8px;
+}
+.data-table td {
+  font-size: 9px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--color-gray-300);
+}
+.data-table th,
+.data-table td {
+  border-left: none;
+  border-right: none;
+}
+
+.value-up {
+  color: var(--color-up);
+  font-weight: 700;
+}
+.value-down {
+  color: var(--color-down);
+  font-weight: 700;
+}
+
+.badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 8px;
+  font-weight: 700;
+  background: var(--color-gray-100);
+  color: var(--color-navy-700);
+}
+
+.callout {
+  border-left: 4px solid;
+  padding: 10px 14px;
+  margin: 12px 0;
+  font-size: 9.5px;
+}
+.callout__title {
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+.callout--info {
+  background: var(--callout-info-bg);
+  border-color: var(--callout-info-border);
+  color: var(--callout-info-text);
+}
+.callout--warning {
+  background: var(--callout-warning-bg);
+  border-color: var(--callout-warning-border);
+  color: var(--callout-warning-text);
+}
+.callout--success {
+  background: var(--callout-success-bg);
+  border-color: var(--callout-success-border);
+  color: var(--callout-success-text);
+}

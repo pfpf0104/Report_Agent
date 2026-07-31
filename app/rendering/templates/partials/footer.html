@@ -1,0 +1,7 @@
+{# 페이지 번호(N / M)는 layout.css의 @page 마진 박스가 counter(page)로 자동 생성한다.
+   여기서는 페이지마다 달라지는 출처 텍스트만 렌더링한다. #}
+{% macro report_footer(source) %}
+<div class="report-footer">
+  <span>{{ source }}</span>
+</div>
+{% endmacro %}

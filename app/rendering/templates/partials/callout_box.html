@@ -1,0 +1,7 @@
+{# variant: "info" | "warning" | "success" #}
+{% macro callout_box(variant, title, body) %}
+<div class="callout callout--{{ variant }}">
+  {% if title %}<div class="callout__title">{{ title }}</div>{% endif %}
+  <div>{{ body }}</div>
+</div>
+{% endmacro %}

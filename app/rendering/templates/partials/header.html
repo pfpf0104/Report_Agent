@@ -1,0 +1,14 @@
+{% macro report_header(label, title, subtitle, meta_lines) %}
+<div class="report-header">
+  <div>
+    <div class="report-header__label">{{ label }}</div>
+    <h1 class="report-header__title">{{ title }}</h1>
+    <div class="report-header__subtitle">{{ subtitle }}</div>
+  </div>
+  <div class="report-header__meta">
+    {% for line in meta_lines %}
+      <div>{{ line }}</div>
+    {% endfor %}
+  </div>
+</div>
+{% endmacro %}

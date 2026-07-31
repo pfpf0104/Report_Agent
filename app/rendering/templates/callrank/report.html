@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% from "partials/header.html" import report_header %}
+{% from "partials/footer.html" import report_footer %}
+{% from "partials/metric_cards.html" import metric_cards %}
+{% from "partials/callout_box.html" import callout_box %}
+
+{% block title %}CallRank Operating Brief{% endblock %}
+
+{% block content %}
+<div class="page">
+  <div class="top-bar"></div>
+  <div class="page-body">
+    {{ report_header(
+      "CALLRANK OPERATING BRIEF",
+      "7월 운용 점검 및 8월 잠정 결정",
+      "실제 중첩 슬리브 성과와 7월 부분월 콜 순위를 함께 본다.",
+      ["시장 종가 기준 " ~ as_of, "FMP 조회 기준 " ~ as_of, "작성 " ~ generated_at]
+    ) }}
+
+    {{ callout_box(
+      "info",
+      "AUGUST 2026 PROVISIONAL DIRECTION — XLE(에너지)",
+      "운용에 사용하는 정규화 방향과 정보 확인용 raw residual이 모두 에너지를 1위로 둔다."
+    ) }}
+
+    {{ metric_cards(cards) }}
+  </div>
+  {{ report_footer("자료: FMP earnings-call transcripts · Yahoo Finance adjusted ETF closes") }}
+</div>
+
+<div class="page">
+  <div class="top-bar"></div>
+  <div class="page-body">
+    {{ report_header(
+      "WHAT AND WHY",
+      "CallRank는 무엇을 보는가",
+      "기업이 평소 하던 말에서 이번 Q&A가 어느 방향으로 달라졌는지 섹터 단위로 모은다.",
+      ["팀 공유용 개념 설명", "모델 수식보다 판단 논리 중심"]
+    ) }}
+
+    {{ callout_box(
+      "warning",
+      "운용 해석",
+      "현재 8월 방향은 지금 XLE(에너지)를 추가 매수하라는 신호가 아니라, 7월 전체 콜을 월말에 다시 계산했을 때 유지되는지를 확인할 후보다."
+    ) }}
+  </div>
+  {{ report_footer("핵심 측정치: firm-conditioned signed Q&A residual") }}
+</div>
+{% endblock %}

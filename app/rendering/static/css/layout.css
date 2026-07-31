@@ -1,0 +1,156 @@
+/*
+ * A4 페이지 규칙과 그리드 레이아웃.
+ * WeasyPrint의 페이지 카운터(counter(page)/counter(pages))만 @page 마진 박스에
+ * 맡기고, 보고서마다 달라지는 출처 텍스트는 각 .page 안의 in-flow footer로
+ * 렌더링한다(러닝 엘리먼트 대신 flex 컬럼 + min-height A4 콘텐츠 높이로
+ * 하단 고정을 구현 — WeasyPrint 버전에 상관없이 안정적으로 동작한다).
+ */
+
+@page {
+  size: A4;
+  margin: 18mm 16mm 14mm 16mm;
+
+  @bottom-right {
+    content: counter(page) " / " counter(pages);
+    font-family: var(--font-family-base);
+    font-size: 8.5px;
+    color: var(--color-gray-600);
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-family-base);
+  font-size: 10.5px;
+  line-height: 1.55;
+  color: #1f2933;
+}
+
+/* A4(297mm) - 상단 18mm - 하단 14mm = 265mm 콘텐츠 높이 */
+.page {
+  display: flex;
+  flex-direction: column;
+  min-height: 265mm;
+  page-break-after: always;
+}
+.page:last-child {
+  page-break-after: auto;
+}
+
+.top-bar {
+  background: var(--color-navy-900);
+  height: 5px;
+  width: 100%;
+  margin: -18mm -16mm 12px -16mm;
+  width: calc(100% + 32mm);
+}
+
+.page-body {
+  flex: 1 1 auto;
+}
+
+/* 헤더: 좌측 라벨+타이틀 / 우측 메타데이터 */
+.report-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 24px;
+  padding-bottom: 10px;
+  margin-bottom: 14px;
+  border-bottom: 2px solid var(--color-navy-900);
+}
+
+.report-header__label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-navy-700);
+  margin-bottom: 4px;
+}
+
+.report-header__title {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--color-navy-900);
+  margin: 0 0 4px;
+}
+
+.report-header__subtitle {
+  font-size: 10px;
+  color: var(--color-gray-600);
+}
+
+.report-header__meta {
+  text-align: right;
+  font-size: 8.5px;
+  color: var(--color-gray-600);
+  line-height: 1.7;
+  white-space: nowrap;
+}
+
+/* 요약 메트릭 카드: 세로 구분선만 있는 3열 그리드 */
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  margin: 14px 0;
+}
+.metric-card {
+  padding: 10px 16px;
+  border-left: 1px solid var(--color-gray-300);
+}
+.metric-card:first-child {
+  border-left: none;
+  padding-left: 0;
+}
+.metric-card__label {
+  font-size: 8.5px;
+  color: var(--color-gray-600);
+  margin-bottom: 4px;
+}
+.metric-card__value {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--color-navy-900);
+}
+.metric-card__caption {
+  font-size: 8px;
+  color: var(--color-gray-600);
+  margin-top: 4px;
+}
+
+/* 넘버링 프로세스 스텝 */
+.process-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin: 14px 0;
+}
+.process-step {
+  background: var(--color-gray-100);
+  border-radius: 4px;
+  padding: 12px;
+}
+.process-step__number {
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--color-navy-700);
+  margin-bottom: 6px;
+}
+
+/* 푸터: 각 .page 하단에 in-flow로 위치 */
+.report-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  border-top: 1px solid var(--color-gray-300);
+  padding-top: 6px;
+  margin-top: 16px;
+  font-size: 8px;
+  color: var(--color-gray-600);
+}

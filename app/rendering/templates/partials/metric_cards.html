@@ -1,0 +1,16 @@
+{# cards: [{label, value, caption, tone}] — tone은 "up"/"down"/None #}
+{% macro metric_cards(cards) %}
+<div class="metric-grid">
+  {% for card in cards %}
+  <div class="metric-card">
+    <div class="metric-card__label">{{ card.label }}</div>
+    <div class="metric-card__value{% if card.tone == 'up' %} value-up{% elif card.tone == 'down' %} value-down{% endif %}">
+      {{ card.value }}
+    </div>
+    {% if card.caption %}
+    <div class="metric-card__caption">{{ card.caption }}</div>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endmacro %}
