@@ -80,17 +80,43 @@ GIPS는 최소 5년 연간 수익률을 요구한다. 현재 인제스천 잡들
   2. XLE/SPY 및 나머지 섹터 ETF (CallRank의 벤치마크)
   3. 삼성전자/SK하이닉스 일별 종가 + 연도별 BPS (밸류에이션)
 
-## 3단계 — 데이터 품질 게이트 (Phase 0-5)
+## 3단계 — 데이터 품질 게이트 실행 (Phase 0-5)
 
-적재된 데이터를 리포트가 그대로 믿으면 안 된다. 최소한 다음을 검사하는
-모듈을 만들어라(제안 위치: `app/ingestion/quality.py`):
+**품질 게이트는 이미 구현돼 있다**(`app/ingestion/quality.py`). 새로 만들지 말고
+적재 직후 실행해 결과를 확인하라:
 
-  - **결측**: 거래일인데 데이터가 없는 구간
-  - **스테일**: 마지막 적재가 N일 이상 지났는지
-  - **이상치**: 일간 변동이 비상식적인 행(예: 주가 ±50%, 금리 ±200bp)
-  - **단위 일관성**: 같은 시리즈 안에서 자릿수가 갑자기 바뀌는지
+    GET /ingestion/quality?as_of=YYYY-MM-DD      (X-API-Key 헤더 필요)
 
-검사 실패 시 리포트 생성을 차단하거나, 최소한 리포트 표지에 경고를 띄운다.
+또는 파이썬에서:
+
+    from app.ingestion.quality import run_quality_gate
+    report = run_quality_gate(db, as_of=date.today())
+    print(report.summary())
+    for issue in report.issues: print(issue)
+
+검사 항목: 데이터 유무 / 스테일 / 상식 범위(단위 오류) / 이상치 / 영업일 결측.
+
+**반드시 확인할 것 — 국고채 금리 단위**:
+
+`ingest_macro_rates.py`는 BOK ECOS가 주는 값을 그대로 저장한다. BOK은 금리를
+**퍼센트**로 준다("2.659" = 2.659%). 그런데
+`duration_controller.compute_carry_price_gate()`의 파라미터는 `yield_3y_bp`,
+`yield_1y_bp` — **베이시스포인트**를 기대한다(265.9가 맞는 값).
+
+지금은 `city_ai_stub`이 300.0(=300bp)을 공급해 이 불일치가 드러나지 않지만,
+실제 BOK 데이터를 컨트롤러에 연결하는 순간 **100배 오류**가 난다. 2.659는 그
+자체로 그럴듯한 숫자라 예외가 나지 않고 조용히 틀린 목표 듀레이션을 만든다.
+
+품질 게이트가 이 오류를 잡도록 만들어져 있다(MACRO 상식 범위 10~2000bp).
+KTB1Y/KTB3Y 적재 후 게이트를 돌려 `value_range` 오류가 뜨는지 확인하고,
+뜬다면 다음 중 하나로 규약을 통일하라:
+
+  - (권장) 인제스천에서 bp로 변환해 저장 — `yield_value * 100`, 그리고
+    `ingest_macro_rates.py` docstring에 단위 규약을 명시
+  - 또는 컨트롤러에 넘기는 경계 함수에서 명시적으로 변환
+
+어느 쪽이든 **단위 규약을 코드 주석과 테스트로 못박아라.** 이 프로젝트가 이미
+FMP 엔드포인트 폐지·BOK 통계코드 오류를 겪은 것과 같은 계열의 함정이다.
 
 ## 4단계 — 리포트 재생성 및 검증
 

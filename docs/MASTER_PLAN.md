@@ -55,7 +55,8 @@ Bridgewater 수준과의 격차는 "페이지가 부족해서"도 "차트가 못
 | G9 | 3개 리포트가 서로 대화하지 않음 (크로스에셋 뷰 부재) | 전역 | 중간 |
 | G10 | 컴플라이언스·면책 프레임 없음 | 없음 | 중간 |
 | G11 | 부동산 인제스천 미구현 (`NotImplementedError`) | `ingest_real_estate_deals.py` | 낮음 |
-| G12 | **`financial_statements` 잡이 스케줄러에 미등록** — DART BPS가 자동 적재되지 않아 밸류에이션 리포트의 `_resolve_book_value`가 운영 중 항상 폴백 경로로 떨어진다 | `ingestion/scheduler.py` | 높음 |
+| G12 | ~~`financial_statements` 잡이 스케줄러에 미등록~~ — **해소**(주간 등록) | `ingestion/scheduler.py` | ~~높음~~ |
+| G13 | **국고채 금리 단위 불일치** — BOK은 퍼센트(`2.659`)를 저장하는데 `duration_controller`는 bp(`265.9`)를 기대한다. 현재는 `city_ai_stub`이 bp를 공급해 드러나지 않지만, 실데이터 연결 시 100배 오류가 조용히 발생한다. 품질 게이트가 잡도록 해뒀으나 규약 통일은 미완 | `ingest_macro_rates.py` ↔ `duration_controller.py` | 높음 |
 
 > **G12는 최근 추가된 스케줄러의 사각지대다.** `scheduler.py`의 `_JOBS`에는
 > `macro_rates`/`equity_prices`/`korean_equity_prices` 3개만 등록돼 있다.
@@ -115,7 +116,7 @@ Bridgewater 수준과의 격차는 "페이지가 부족해서"도 "차트가 못
 | 0-2 | 시계열 히스토리 백필 (최소 5년) | GIPS 5년 요건 충족. FRED/BOK/KIS 과거분 |
 | 0-3 | **Point-in-time 스키마 도입** | 모든 fact 테이블에 `knowledge_date`(정보 취득시점) 추가, 조회 시 `as_of` 기준 필터 강제 |
 | 0-4 | 하드코딩 성과 제거 | `BACKTEST_SUMMARY` 삭제 → 실제 계산 결과로 대체하거나 섹션 자체 제거 |
-| 0-5 | 데이터 품질 게이트 | 결측/이상치/스테일 데이터 검사. 실패 시 리포트 생성 차단 |
+| ~~0-5~~ | ~~데이터 품질 게이트~~ | **완료** — `app/ingestion/quality.py` + `GET /ingestion/quality`. 데이터 유무·스테일·상식범위(단위 오류)·이상치·영업일 결측 검사 |
 
 > **0-3이 이 프로젝트의 진짜 분기점이다.** 지금 리포트 본문은 "7일 embargo",
 > "정보 동결" 같은 기관급 규율을 주장하는데 스키마가 이를 강제하지 못한다.
