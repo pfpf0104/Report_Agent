@@ -16,6 +16,7 @@ from app.computation.valuation.residual_income_model import (
 )
 from app.db.base import SessionLocal
 from app.db.models.dim_asset import AssetType, DimAsset
+from app.db.models.fact_financial_quarterly import FactFinancialQuarterly
 from app.db.models.fact_market_daily import FactMarketDaily
 
 # 첨부 밸류에이션 보고서 원문 값(오차 수십 원 이내로 검산 완료 — CHANGELOG 커밋 참고).
@@ -39,6 +40,9 @@ def db():
     session = SessionLocal()
     yield session
     session.query(FactMarketDaily).filter(FactMarketDaily.asset_id.in_(
+        session.query(DimAsset.asset_id).filter(DimAsset.code.in_(["005930", "000660"]))
+    )).delete(synchronize_session=False)
+    session.query(FactFinancialQuarterly).filter(FactFinancialQuarterly.asset_id.in_(
         session.query(DimAsset.asset_id).filter(DimAsset.code.in_(["005930", "000660"]))
     )).delete(synchronize_session=False)
     session.query(DimAsset).filter(DimAsset.code.in_(["005930", "000660"])).delete(synchronize_session=False)
@@ -65,6 +69,27 @@ def test_build_valuation_context_prefers_real_kis_price(db):
     samsung_card = context["cards"][0]
     assert "220,000원" in samsung_card["caption"]
     assert "KIS 실시간 시세" in samsung_card["caption"]
+
+
+def test_build_valuation_context_falls_back_book_value_without_dart_data(db):
+    context = build_valuation_context(db, date(2026, 7, 30))
+    assert context["samsung"]["book_value"] == pytest.approx(SAMSUNG_BOOK_VALUE)
+    assert "보고서 고정값" in context["samsung"]["book_value_source"]
+
+
+def test_build_valuation_context_prefers_real_dart_bps(db):
+    asset = DimAsset(asset_type=AssetType.EQUITY.value, code="005930", name_kr="삼성전자", currency="KRW")
+    db.add(asset)
+    db.commit()
+    db.refresh(asset)
+    db.add(FactFinancialQuarterly(asset_id=asset.asset_id, fiscal_year=2025, fiscal_quarter=4, bps=90000.0, source="dart"))
+    db.commit()
+
+    context = build_valuation_context(db, date(2026, 7, 30))
+    assert context["samsung"]["book_value"] == pytest.approx(90000.0)
+    assert "DART 2025년" in context["samsung"]["book_value_source"]
+    # SK하이닉스는 DART 데이터가 없으니 그대로 폴백을 써야 한다
+    assert context["hynix"]["book_value"] == pytest.approx(SK_HYNIX_BOOK_VALUE)
 
 
 def test_rim_value_breakdown_components_sum_to_compute_rim_value():
