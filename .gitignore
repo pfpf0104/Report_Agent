@@ -10,3 +10,6 @@ venv/
 
 # 인제스천 raw 응답 아카이브 — 런타임 산출물, 소스 아님
 data/raw_archive/
+
+# 참고문헌 PDF는 저작권 문서라 커밋하지 않는다 — references/download_references.sh로 각자 받는다.
+references/*.pdf
