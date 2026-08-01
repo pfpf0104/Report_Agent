@@ -38,7 +38,10 @@ def _get_or_create_asset(db: Session, symbol: str) -> DimAsset:
 def _upsert_quote(db: Session, asset: DimAsset, trade_date, quote: dict) -> None:
     row = db.query(FactMarketDaily).filter_by(asset_id=asset.asset_id, trade_date=trade_date).first()
     if row is None:
-        row = FactMarketDaily(asset_id=asset.asset_id, trade_date=trade_date)
+        # knowledge_date = 인제스천 시점. 이 job은 당일 시세를 당일 조회하므로
+        # trade_date와 같지만, 과거분 백필 시에는 달라진다(그때 알 수 없던 값이
+        # 아니라 지금 알게 된 값이라는 사실을 정확히 기록한다).
+        row = FactMarketDaily(asset_id=asset.asset_id, trade_date=trade_date, knowledge_date=trade_date)
         db.add(row)
     row.open = quote.get("open")
     row.high = quote.get("dayHigh")

@@ -34,6 +34,7 @@ from sqlalchemy.orm import Session
 from app.db.models.dim_asset import DimAsset
 from app.db.models.fact_financial_quarterly import FactFinancialQuarterly
 from app.db.models.fact_market_daily import FactMarketDaily
+from app.db.point_in_time import visible_as_of
 
 
 @dataclass(frozen=True)
@@ -257,12 +258,12 @@ def _risk_cards(company: dict, scenarios: list[RimScenario]) -> list[dict]:
     ]
 
 
-def _latest_close_price(db: Session, stock_code: str) -> float | None:
+def _latest_close_price(db: Session, stock_code: str, as_of: date) -> float | None:
     asset = db.query(DimAsset).filter_by(code=stock_code).first()
     if asset is None:
         return None
     row = (
-        db.query(FactMarketDaily)
+        visible_as_of(db.query(FactMarketDaily), FactMarketDaily, as_of)
         .filter_by(asset_id=asset.asset_id)
         .order_by(FactMarketDaily.trade_date.desc())
         .first()
@@ -272,20 +273,23 @@ def _latest_close_price(db: Session, stock_code: str) -> float | None:
     return float(row.close)
 
 
-def _resolve_current_price(db: Session, name: str) -> tuple[float, str]:
-    """KIS 실데이터가 fact_market_daily에 있으면 그걸, 없으면 보고서 고정값을 쓴다."""
-    price = _latest_close_price(db, STOCK_CODE[name])
+def _resolve_current_price(db: Session, name: str, as_of: date) -> tuple[float, str]:
+    """KIS 실데이터가 fact_market_daily에 있으면 그걸, 없으면 보고서 고정값을 쓴다.
+
+    as_of 시점에 알 수 있었던 시세만 본다(point_in_time.visible_as_of).
+    """
+    price = _latest_close_price(db, STOCK_CODE[name], as_of)
     if price is not None:
         return price, "KIS 실시간 시세"
     return CURRENT_PRICE_FALLBACK[name], "보고서 고정값(KIS 데이터 없음)"
 
 
-def _latest_bps(db: Session, stock_code: str) -> tuple[float, int] | None:
+def _latest_bps(db: Session, stock_code: str, as_of: date) -> tuple[float, int] | None:
     asset = db.query(DimAsset).filter_by(code=stock_code).first()
     if asset is None:
         return None
     row = (
-        db.query(FactFinancialQuarterly)
+        visible_as_of(db.query(FactFinancialQuarterly), FactFinancialQuarterly, as_of)
         .filter_by(asset_id=asset.asset_id)
         .filter(FactFinancialQuarterly.bps.isnot(None))
         .order_by(FactFinancialQuarterly.fiscal_year.desc(), FactFinancialQuarterly.fiscal_quarter.desc())
@@ -296,10 +300,14 @@ def _latest_bps(db: Session, stock_code: str) -> tuple[float, int] | None:
     return float(row.bps), row.fiscal_year
 
 
-def _resolve_book_value(db: Session, name: str) -> tuple[float, str]:
+def _resolve_book_value(db: Session, name: str, as_of: date) -> tuple[float, str]:
     """DART 실측 BPS(ingest_financial_statements.py)가 fact_financial_quarterly에
-    있으면 그걸, 없으면 보고서 고정값을 쓴다(현재가와 동일한 실측/폴백 패턴)."""
-    result = _latest_bps(db, STOCK_CODE[name])
+    있으면 그걸, 없으면 보고서 고정값을 쓴다(현재가와 동일한 실측/폴백 패턴).
+
+    as_of 시점에 이미 공시된 보고서만 본다 — 회계연도가 지났어도 아직 공시 전이면
+    쓰지 않는다(point_in_time.visible_as_of).
+    """
+    result = _latest_bps(db, STOCK_CODE[name], as_of)
     if result is not None:
         bps, fiscal_year = result
         return bps, f"DART {fiscal_year}년 사업보고서 실측 BPS"
@@ -338,10 +346,10 @@ def _pbr_cross_check_row(company: dict) -> list[str]:
     ]
 
 
-def _company_row(db: Session, name: str, scenarios: list[RimScenario]) -> dict:
-    book_value, book_value_source = _resolve_book_value(db, name)
+def _company_row(db: Session, name: str, scenarios: list[RimScenario], as_of: date) -> dict:
+    book_value, book_value_source = _resolve_book_value(db, name, as_of)
     result = probability_weighted_value(book_value, scenarios)
-    current, price_source = _resolve_current_price(db, name)
+    current, price_source = _resolve_current_price(db, name, as_of)
     fair_value = result["weighted_value"]
     upside_pct = (fair_value / current - 1) * 100
     base_scenario = max(scenarios, key=lambda sc: sc.weight)
@@ -395,8 +403,8 @@ def _assumption_rows(company: dict, scenarios: list[RimScenario]) -> list[list[s
 
 
 def build_valuation_context(db: Session, as_of: date) -> dict:
-    samsung = _company_row(db, "삼성전자", SAMSUNG_SCENARIOS)
-    hynix = _company_row(db, "SK하이닉스", SK_HYNIX_SCENARIOS)
+    samsung = _company_row(db, "삼성전자", SAMSUNG_SCENARIOS, as_of)
+    hynix = _company_row(db, "SK하이닉스", SK_HYNIX_SCENARIOS, as_of)
 
     cards = [
         {

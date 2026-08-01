@@ -62,7 +62,10 @@ def test_build_valuation_context_prefers_real_kis_price(db):
     db.add(asset)
     db.commit()
     db.refresh(asset)
-    db.add(FactMarketDaily(asset_id=asset.asset_id, trade_date=date(2026, 7, 30), close=220000, adj_close=220000, source="kis"))
+    db.add(FactMarketDaily(
+        asset_id=asset.asset_id, trade_date=date(2026, 7, 30), knowledge_date=date(2026, 7, 30),
+        close=220000, adj_close=220000, source="kis",
+    ))
     db.commit()
 
     context = build_valuation_context(db, date(2026, 7, 30))
@@ -82,7 +85,10 @@ def test_build_valuation_context_prefers_real_dart_bps(db):
     db.add(asset)
     db.commit()
     db.refresh(asset)
-    db.add(FactFinancialQuarterly(asset_id=asset.asset_id, fiscal_year=2025, fiscal_quarter=4, bps=90000.0, source="dart"))
+    db.add(FactFinancialQuarterly(
+        asset_id=asset.asset_id, fiscal_year=2025, fiscal_quarter=4,
+        knowledge_date=date(2026, 3, 31), bps=90000.0, source="dart",
+    ))
     db.commit()
 
     context = build_valuation_context(db, date(2026, 7, 30))

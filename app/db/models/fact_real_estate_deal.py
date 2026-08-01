@@ -13,6 +13,9 @@ class FactRealEstateDeal(Base):
 
     deal_id: Mapped[int] = mapped_column(BigInteger, autoincrement=True, primary_key=True)
     deal_date: Mapped[object] = mapped_column(Date, primary_key=True)
+    # 이 실거래를 "알 수 있게 된" 날. 한국 실거래가 공개는 계약일로부터 통상
+    # 30일 이상 지연되므로 deal_date를 그대로 쓰면 look-ahead bias가 생긴다.
+    knowledge_date: Mapped[object] = mapped_column(Date, nullable=False, index=True)
     asset_id: Mapped[int] = mapped_column(ForeignKey("dim_asset.asset_id"), nullable=False)
     cap_rate: Mapped[float | None] = mapped_column(Numeric(6, 4))
     mortgage_rate: Mapped[float | None] = mapped_column(Numeric(6, 4))

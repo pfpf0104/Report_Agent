@@ -43,7 +43,9 @@ def _get_or_create_asset(db: Session, code: str, name_kr: str) -> DimAsset:
 def _upsert_price(db: Session, asset: DimAsset, trade_date, output: dict) -> None:
     row = db.query(FactMarketDaily).filter_by(asset_id=asset.asset_id, trade_date=trade_date).first()
     if row is None:
-        row = FactMarketDaily(asset_id=asset.asset_id, trade_date=trade_date)
+        # 당일 시세를 당일 조회하므로 knowledge_date = trade_date
+        # (app/db/point_in_time.py 참고).
+        row = FactMarketDaily(asset_id=asset.asset_id, trade_date=trade_date, knowledge_date=trade_date)
         db.add(row)
     row.open = output.get("stck_oprc")
     row.high = output.get("stck_hgpr")

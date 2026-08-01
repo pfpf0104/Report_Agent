@@ -34,6 +34,7 @@ from app.computation.quant.sector_embeddings import (
 )
 from app.db.models.dim_asset import DimAsset
 from app.db.models.fact_market_daily import FactMarketDaily
+from app.db.point_in_time import visible_as_of
 
 PASSAGE_LENGTHS = (128, 160, 200)
 MIN_ELIGIBLE_SECTORS = 6
@@ -194,16 +195,21 @@ def _tone(value: float | None) -> str | None:
 
 
 def _mtd_return(db: Session, asset_id: int, as_of: date) -> float | None:
+    """as_of 시점에 알 수 있었던 시세만으로 월중 수익률을 계산한다.
+
+    trade_date 필터만으로는 부족하다 — 정정 공시된 시세처럼 사건일은 과거지만
+    취득일은 as_of 이후인 행이 섞일 수 있다(app/db/point_in_time.py 참고).
+    """
     month_start = as_of.replace(day=1)
 
     start_row = (
-        db.query(FactMarketDaily)
+        visible_as_of(db.query(FactMarketDaily), FactMarketDaily, as_of)
         .filter(FactMarketDaily.asset_id == asset_id, FactMarketDaily.trade_date < month_start)
         .order_by(FactMarketDaily.trade_date.desc())
         .first()
     )
     end_row = (
-        db.query(FactMarketDaily)
+        visible_as_of(db.query(FactMarketDaily), FactMarketDaily, as_of)
         .filter(FactMarketDaily.asset_id == asset_id, FactMarketDaily.trade_date <= as_of)
         .order_by(FactMarketDaily.trade_date.desc())
         .first()

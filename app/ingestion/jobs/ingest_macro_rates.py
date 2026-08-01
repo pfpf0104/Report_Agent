@@ -76,7 +76,11 @@ def run() -> None:
                     .first()
                 )
                 if row is None:
-                    row = FactMarketDaily(asset_id=asset.asset_id, trade_date=trade_date)
+                    # BOK ECOS 일별 금리는 해당일에 공표되므로 knowledge_date = trade_date
+                    # (app/db/point_in_time.py 참고).
+                    row = FactMarketDaily(
+                        asset_id=asset.asset_id, trade_date=trade_date, knowledge_date=trade_date
+                    )
                     db.add(row)
                 row.close = yield_value
                 row.adj_close = yield_value
