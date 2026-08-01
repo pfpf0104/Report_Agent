@@ -85,7 +85,10 @@ def line_chart(
     ax.spines["left"].set_color(GRAY_300)
     ax.spines["bottom"].set_color(GRAY_300)
     ax.tick_params(colors="#6b7280", labelsize=8)
-    ax.legend(frameon=False, fontsize=8, loc="upper left")
+    # "upper left" 고정 위치는 데이터 모양에 따라 선과 겹친다(예: 첫 해가 가장
+    # 높고 우하향하는 ROE 경로 차트에서 범례가 선 위에 그대로 얹힌 문제를 확인).
+    # "best"는 matplotlib이 실제 선 위치를 보고 겹치지 않는 위치를 고른다.
+    ax.legend(frameon=False, fontsize=8, loc="best")
     ax.grid(axis="y", color=GRAY_300, linewidth=0.6)
     fig.tight_layout()
     return _fig_to_data_uri(fig)

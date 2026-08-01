@@ -189,6 +189,42 @@ def _comparison_bar_chart(samsung: dict, hynix: dict) -> str:
     return vertical_bar_chart(labels, values, figsize=(6.2, 2.2), value_fmt="{:+.1f}%")
 
 
+def _roe_path_chart(scenarios: list[RimScenario]) -> str:
+    """시나리오별 5개년 명시적 ROE 경로 — RimScenario.roe_path를 그대로 그린다(합성 아님)."""
+    from app.rendering.chart_service import line_chart
+
+    x_labels = [f"{t}년차" for t in range(1, len(scenarios[0].roe_path) + 1)]
+    series = {sc.name: list(sc.roe_path) for sc in scenarios}
+    return line_chart(x_labels, series, figsize=(6.2, 2.2), max_x_ticks=5)
+
+
+def _sensitivity_range_text(sensitivity_rows: list[dict]) -> str:
+    changes = [r["change_pct"] for r in sensitivity_rows]
+    return f"{min(changes):+.1f}%~{max(changes):+.1f}%"
+
+
+def _risk_cards(company: dict, scenarios: list[RimScenario]) -> list[dict]:
+    """하드코딩된 리스크 서술이 아니라, 이미 계산된 시나리오·민감도 수치를 인용한다."""
+    tail_weight = sum(sc.weight for sc in scenarios if sc.name in ("공격적 추격", "가격전쟁"))
+    tail_value = next(r["value"] for r in company["scenario_rows"] if r["scenario"] == "가격전쟁")
+    tail_change = (tail_value / company["current_price"] - 1) * 100
+    sensitivity_range = _sensitivity_range_text(company["sensitivity_rows"])
+    return [
+        {
+            "title": "사이클 하방 리스크",
+            "body": f"공격적 추격+가격전쟁 결합 확률 {tail_weight*100:.0f}%. 가격전쟁 시나리오 적정가는 현재가 대비 {tail_change:+.1f}%.",
+        },
+        {
+            "title": "자기자본비용 민감도",
+            "body": f"기준 시나리오({company['base_scenario'].name})의 r을 ±1.0%p 흔들면 적정가는 {sensitivity_range} 구간에서 움직인다.",
+        },
+        {
+            "title": "BPS 최신화 리스크",
+            "body": f"현재 장부가치 {company['book_value']:,.0f}원은 DART 연동 전 보고서 고정값이다. 최신 분기 실적과 괴리가 있을 수 있다.",
+        },
+    ]
+
+
 def _latest_close_price(db: Session, stock_code: str) -> float | None:
     asset = db.query(DimAsset).filter_by(code=stock_code).first()
     if asset is None:
@@ -322,12 +358,16 @@ def build_valuation_context(db: Session, as_of: date) -> dict:
             "scenario_chart_uri": _scenario_bar_chart(samsung),
             "scenario_table_rows": _scenario_rows_for(samsung),
             "sensitivity_table_rows": _sensitivity_table_rows(samsung),
+            "roe_chart_uri": _roe_path_chart(SAMSUNG_SCENARIOS),
+            "risk_cards": _risk_cards(samsung, SAMSUNG_SCENARIOS),
         },
         "hynix": {
             **hynix,
             "scenario_chart_uri": _scenario_bar_chart(hynix),
             "scenario_table_rows": _scenario_rows_for(hynix),
             "sensitivity_table_rows": _sensitivity_table_rows(hynix),
+            "roe_chart_uri": _roe_path_chart(SK_HYNIX_SCENARIOS),
+            "risk_cards": _risk_cards(hynix, SK_HYNIX_SCENARIOS),
         },
         "weight_donut_chart_uri": _weight_donut_chart(SAMSUNG_SCENARIOS),
         "assumption_rows": _assumption_rows(samsung, SAMSUNG_SCENARIOS) + _assumption_rows(hynix, SK_HYNIX_SCENARIOS),
