@@ -20,7 +20,7 @@ async def test_fetch_quote_without_api_key_raises(monkeypatch):
 
 @respx.mock
 async def test_fetch_quote_success():
-    respx.get("https://financialmodelingprep.com/api/v3/quote/XLE").mock(
+    respx.get("https://financialmodelingprep.com/stable/quote", params={"symbol": "XLE"}).mock(
         return_value=httpx.Response(200, json=[{"symbol": "XLE", "price": 95.32}])
     )
     async with httpx.AsyncClient() as client:
@@ -30,7 +30,7 @@ async def test_fetch_quote_success():
 
 @respx.mock
 async def test_fetch_quote_empty_response_raises():
-    respx.get("https://financialmodelingprep.com/api/v3/quote/BADSYM").mock(
+    respx.get("https://financialmodelingprep.com/stable/quote", params={"symbol": "BADSYM"}).mock(
         return_value=httpx.Response(200, json=[])
     )
     async with httpx.AsyncClient() as client:
@@ -40,7 +40,7 @@ async def test_fetch_quote_empty_response_raises():
 
 @respx.mock
 async def test_fetch_profile_success():
-    respx.get("https://financialmodelingprep.com/api/v3/profile/AAPL").mock(
+    respx.get("https://financialmodelingprep.com/stable/profile", params={"symbol": "AAPL"}).mock(
         return_value=httpx.Response(200, json=[{"symbol": "AAPL", "companyName": "Apple Inc."}])
     )
     async with httpx.AsyncClient() as client:

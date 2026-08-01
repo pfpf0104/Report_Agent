@@ -4,6 +4,14 @@ WeasyPrint 렌더링은 CPU-bound 작업이다. FastAPI의 기본 스레드풀�
 동시 요청이 몰릴 때 스레드풀이 고갈되어 헬스체크·ingestion 트리거 같은 짧은
 I/O 요청까지 지연될 수 있으므로, 전용 ProcessPoolExecutor에서 렌더링하고
 그 결과만 비동기로 기다린다.
+
+WeasyPrint는 GTK 계열 네이티브 라이브러리(libgobject-2.0-0 등)에 의존한다.
+Windows에 네이티브 GTK가 없으면 `from weasyprint import HTML`이 모듈 임포트
+시점에 바로 실패한다 — 로컬 환경에서 실제로 재현됨(health 엔드포인트조차 응답
+못 하고 앱 전체가 기동 실패). 그래서 weasyprint import를 이 모듈의 최상단이
+아니라 실제로 PDF를 렌더링하는 함수 안으로 미룬다: `/health`, `/ingestion`
+라우터는 PDF를 렌더링하지 않으므로 weasyprint가 없어도 정상 기동돼야 한다.
+Windows에서 로컬 개발 시에는 WSL2 또는 Docker 사용을 권장한다(README 참고).
 """
 from __future__ import annotations
 
@@ -15,7 +23,6 @@ from functools import partial
 from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
-from weasyprint import HTML
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 STATIC_DIR = Path(__file__).parent / "static"
@@ -43,6 +50,8 @@ def shutdown_executor() -> None:
 
 
 def _render_pdf_bytes(html_content: str, base_url: str) -> bytes:
+    from weasyprint import HTML  # 지연 임포트 — 모듈 docstring 참고
+
     return HTML(string=html_content, base_url=base_url).write_pdf()
 
 

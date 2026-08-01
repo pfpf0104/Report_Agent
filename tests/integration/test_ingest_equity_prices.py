@@ -32,10 +32,10 @@ def db():
 
 @respx.mock
 def test_run_upserts_quotes_into_fact_market_daily(db):
-    respx.get("https://financialmodelingprep.com/api/v3/quote/XLE").mock(
+    respx.get("https://financialmodelingprep.com/stable/quote", params={"symbol": "XLE"}).mock(
         return_value=httpx.Response(200, json=[{"symbol": "XLE", "price": 95.32, "open": 94.0, "dayHigh": 96.0, "dayLow": 93.5, "volume": 1000}])
     )
-    respx.get("https://financialmodelingprep.com/api/v3/quote/SPY").mock(
+    respx.get("https://financialmodelingprep.com/stable/quote", params={"symbol": "SPY"}).mock(
         return_value=httpx.Response(200, json=[{"symbol": "SPY", "price": 550.1, "open": 548.0, "dayHigh": 551.0, "dayLow": 547.0, "volume": 2000}])
     )
 
@@ -52,8 +52,10 @@ def test_run_upserts_quotes_into_fact_market_daily(db):
 
 @respx.mock
 def test_run_records_failure_on_api_error(db):
-    respx.get("https://financialmodelingprep.com/api/v3/quote/XLE").mock(return_value=httpx.Response(200, json=[]))
-    respx.get("https://financialmodelingprep.com/api/v3/quote/SPY").mock(
+    respx.get("https://financialmodelingprep.com/stable/quote", params={"symbol": "XLE"}).mock(
+        return_value=httpx.Response(200, json=[])
+    )
+    respx.get("https://financialmodelingprep.com/stable/quote", params={"symbol": "SPY"}).mock(
         return_value=httpx.Response(200, json=[{"symbol": "SPY", "price": 550.1}])
     )
 

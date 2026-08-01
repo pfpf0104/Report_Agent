@@ -2,10 +2,11 @@
 
 MetroGuard의 carry-price gate가 쓰는 Y(1), Y(3) 실제 금리 입력이다.
 
-TODO(확인 필요): STAT_CODE="722Y001"(시장금리)과 ITEM_CODE는 ECOS 홈페이지
-(https://ecos.bok.or.kr) 통계코드 검색에서 실제 국고채 1년/3년 코드로
-재확인해야 한다 — 이 세션은 네트워크가 막혀 있어 실제 응답으로 검증하지
-못했다. 아래 값은 최선의 추정치이며 그대로 신뢰하지 말 것.
+실측 완료: STAT_CODE="817Y002"(시장금리, 일별), ITEM_CODE KTB1Y="010190000"
+(국고채 1년), KTB3Y="010200000"(국고채 3년) — 로컬 PC에서 실제 API 키로 조회해
+2025-01-02 기준 각각 2.659%, 2.507%로 정상 응답 확인함(2026-08 검증).
+이전 값(STAT_CODE="722Y001"=기준금리, ITEM_CODE="0101000"/"0101002")은 잘못된
+통계와 존재하지 않는 품목코드였다.
 """
 from __future__ import annotations
 
@@ -21,13 +22,13 @@ from app.db.models.fact_market_daily import FactMarketDaily
 from app.ingestion.connectors.bok_client import fetch_statistic_search
 from app.ingestion.run_tracker import track_ingestion_run
 
-STAT_CODE = "722Y001"  # 시장금리(일별)
+STAT_CODE = "817Y002"  # 시장금리(일별) — 실측 완료
 CYCLE = "D"
 
-# TODO(확인 필요): 실제 국고채 1년/3년 품목코드로 교체.
+# 국고채 1년/3년 품목코드 — 실측 완료(2026-08, 위 docstring 참고).
 MACRO_SERIES = {
-    "KTB1Y": "0101000",
-    "KTB3Y": "0101002",
+    "KTB1Y": "010190000",
+    "KTB3Y": "010200000",
 }
 
 

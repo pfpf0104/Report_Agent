@@ -29,8 +29,14 @@ class Settings(BaseSettings):
 
     # .env는 커밋되는 예시/기본값용, .env.local은 실제 비밀값(gitignore 대상)용.
     # 두 파일 다 있으면 .env.local이 나중에 로드되어 .env 값을 덮어쓴다.
+    #
+    # extra="ignore": pydantic-settings 기본값(forbid)은 env_prefix로 걸러지기 전에
+    # .env 파일에 있는 모든 키를 검사해, REPORT_AGENT_ 접두사가 없는 무관한 키
+    # (다른 프로젝트와 .env.local을 공유할 때 생기는 TELEGRAM_*, KIS_PAPER_* 등)가
+    # 하나라도 있으면 즉시 ValidationError로 앱 기동 자체가 실패한다 — 실제 로컬
+    # 환경에서 재현·확인함. ignore로 두면 접두사 안 맞는 키는 조용히 무시한다.
     model_config = SettingsConfigDict(
-        env_file=(".env", ".env.local"), env_file_encoding="utf-8", env_prefix="REPORT_AGENT_"
+        env_file=(".env", ".env.local"), env_file_encoding="utf-8", env_prefix="REPORT_AGENT_", extra="ignore"
     )
 
 

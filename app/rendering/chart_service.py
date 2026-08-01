@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import base64
 import io
+import logging
 import math
 
 import matplotlib
@@ -17,11 +18,20 @@ import matplotlib.pyplot as plt  # noqa: E402
 
 from app.core.design_tokens import CHART_PALETTE, GRAY_300, semantic_color  # noqa: E402
 
+logger = logging.getLogger("app.rendering")
+
 # 한글 라벨 렌더링용. Pretendard는 woff2만 있어 matplotlib이 못 읽으므로
-# HTML/CSS는 Pretendard, 차트는 시스템에 설치된 Noto Sans CJK를 쓴다.
+# HTML/CSS는 Pretendard, 차트는 시스템에 설치된 한글 폰트를 쓴다. 배포 대상
+# OS마다 경로가 달라 리눅스(Noto Sans CJK)/Windows(맑은 고딕)/macOS(AppleSDGothicNeo)
+# 후보를 모두 나열한다 — 실제 로컬 Windows PC에서 리눅스 경로만 있어 폰트를
+# 못 찾고 DejaVu Sans로 조용히 폴백해(한글 라벨이 깨짐) 확인 후 추가함.
 _KOREAN_FONT_CANDIDATES = [
     "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
     "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+    "C:/Windows/Fonts/malgun.ttf",
+    "C:/Windows/Fonts/malgunbd.ttf",
+    "/System/Library/Fonts/AppleSDGothicNeo.ttc",
+    "/Library/Fonts/AppleGothic.ttf",
 ]
 
 
@@ -38,6 +48,12 @@ def _register_korean_font() -> str | None:
 _FONT_NAME = _register_korean_font()
 if _FONT_NAME:
     plt.rcParams["font.family"] = _FONT_NAME
+else:
+    logger.warning(
+        "한글 폰트를 찾지 못해 matplotlib 기본 폰트(DejaVu Sans)로 폴백합니다 — "
+        "차트의 한글 라벨이 네모(tofu)로 깨져 보일 수 있습니다. "
+        "_KOREAN_FONT_CANDIDATES에 이 PC에 실제로 설치된 한글 폰트 경로를 추가하세요."
+    )
 plt.rcParams["axes.unicode_minus"] = False
 plt.rcParams["font.size"] = 9
 
