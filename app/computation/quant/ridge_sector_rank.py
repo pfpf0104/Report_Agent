@@ -33,6 +33,7 @@ from app.computation.quant.sector_embeddings import (
     generate_frozen_hedge_training_set,
 )
 from app.computation.performance_disclosure import build_performance_pending_context
+from app.computation.portfolio.report_context import build_portfolio_context
 from app.db.models.dim_asset import DimAsset
 from app.db.models.fact_market_daily import FactMarketDaily
 from app.db.point_in_time import visible_as_of
@@ -234,6 +235,7 @@ def build_callrank_context(db: Session, as_of: date, leading_sector_seed: str = 
             "what_and_why_cards": WHAT_AND_WHY_CARDS,
             "workflow_steps": PROCESS_STEPS,
             **build_performance_pending_context(),
+            **build_portfolio_context(db, as_of, [], SECTOR_ETF_BY_NAME),
         }
 
     top_sector = ranking["normalized_direction"][0]["sector"]
@@ -278,6 +280,7 @@ def build_callrank_context(db: Session, as_of: date, leading_sector_seed: str = 
         "what_and_why_cards": WHAT_AND_WHY_CARDS,
         "workflow_steps": PROCESS_STEPS,
         **build_performance_pending_context(),
+        **build_portfolio_context(db, as_of, ranking["normalized_direction"], SECTOR_ETF_BY_NAME),
     }
 
 

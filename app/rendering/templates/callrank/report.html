@@ -102,6 +102,38 @@
   <div class="top-bar"></div>
   <div class="page-body">
     {{ report_header(
+      "FROM RANKING TO PORTFOLIO",
+      "랭킹이 비중으로 바뀌는 과정",
+      "순위는 '무엇을 살까'만 말한다. 실제 운용에는 '얼마나'가 필요하다.",
+      ["위험 기준 중립 비중 → 신호 기울이기 → 제약", portfolio_data_status]
+    ) }}
+
+    {{ info_cards(portfolio_method_cards) }}
+
+    {% if portfolio_available %}
+    <table class="data-table">
+      <thead>
+        <tr><th>섹터</th><th>ETF</th><th>점수</th><th>중립 비중</th><th>최종 비중</th><th>위험 기여</th></tr>
+      </thead>
+      <tbody>
+        {% for row in portfolio_rows %}
+        <tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <div class="chart-caption">{{ portfolio_assumptions }}</div>
+    <div class="chart-caption">{{ portfolio_cost_note }}</div>
+    {% else %}
+    {{ callout_box("warning", portfolio_pending_title, portfolio_pending_body) }}
+    {% endif %}
+  </div>
+  {{ report_footer("비중 산출: 리스크패리티 + 신호 기울이기 + 종목 상한") }}
+</div>
+
+<div class="page">
+  <div class="top-bar"></div>
+  <div class="page-body">
+    {{ report_header(
       "DECISION EVIDENCE",
       "두 표현의 잠정 상위 순위",
       "정규화 방향(운용용)과 raw residual(정보 확인용)이 같은 섹터를 가리키는지 교차검증한다.",
