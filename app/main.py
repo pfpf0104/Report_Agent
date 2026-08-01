@@ -5,11 +5,13 @@ from fastapi import Depends, FastAPI
 from app.api.routers import health_router, ingestion_router, reports_router
 from app.core.config import settings
 from app.core.security import verify_api_key
+from app.ingestion.scheduler import create_scheduler
 from app.rendering.pdf_service import shutdown_executor
 
 logger = logging.getLogger("app")
 
 app = FastAPI(title="Financial Report Automation Pipeline")
+_scheduler = create_scheduler()
 
 if settings.api_key == "changeme":
     logger.warning(
@@ -32,6 +34,12 @@ app.include_router(
 )
 
 
+@app.on_event("startup")
+def _on_startup() -> None:
+    _scheduler.start()
+
+
 @app.on_event("shutdown")
 def _on_shutdown() -> None:
+    _scheduler.shutdown(wait=False)
     shutdown_executor()
