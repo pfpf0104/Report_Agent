@@ -19,28 +19,35 @@ from app.ingestion.jobs import (
 
 router = APIRouter()
 
+# 값으로 `module.run` 함수 객체가 아니라 **모듈**을 담는다.
+#
+# 함수 객체를 담으면 임포트 시점에 참조가 고정돼, 테스트가 `patch.object(job_module,
+# "run")`으로 대체해도 여기 저장된 원본이 그대로 실행된다. 실제로 그 상태에서
+# 유닛 테스트가 BOK ECOS를 진짜로 호출하고 DB에 쓰고 있었다(샌드박스에서 프록시
+# 403으로 드러남 — 네트워크가 열린 환경에서는 조용히 통과하며 API 쿼터를 먹는다).
+# 모듈을 담고 호출 시점에 `.run`을 꺼내면 패치가 정상 동작한다.
 _JOBS = {
-    "equity_prices": ingest_equity_prices.run,
-    "korean_equity_prices": ingest_korean_equity_prices.run,
-    "macro_rates": ingest_macro_rates.run,
-    "financial_statements": ingest_financial_statements.run,
-    "real_estate_deals": ingest_real_estate_deals.run,
+    "equity_prices": ingest_equity_prices,
+    "korean_equity_prices": ingest_korean_equity_prices,
+    "macro_rates": ingest_macro_rates,
+    "financial_statements": ingest_financial_statements,
+    "real_estate_deals": ingest_real_estate_deals,
     # 5년 히스토리 백필(Phase 0-2). 매일 도는 스케줄러 대상이 아니라 일회성/
     # 재해복구용이라 별도 job 이름으로 등록한다 — 전부 재개 가능(idempotent)해
     # 여러 번 트리거해도 안전하다.
-    "backfill_macro_rates": backfill_macro_rates.run,
-    "backfill_equity_prices": backfill_equity_prices.run,
-    "backfill_korean_equity_prices": backfill_korean_equity_prices.run,
-    "backfill_financial_statements": backfill_financial_statements.run,
+    "backfill_macro_rates": backfill_macro_rates,
+    "backfill_equity_prices": backfill_equity_prices,
+    "backfill_korean_equity_prices": backfill_korean_equity_prices,
+    "backfill_financial_statements": backfill_financial_statements,
 }
 
 
 @router.post("/trigger/{job_name}")
 def trigger_job(job_name: str, background_tasks: BackgroundTasks) -> dict:
-    job = _JOBS.get(job_name)
-    if job is None:
+    module = _JOBS.get(job_name)
+    if module is None:
         return {"error": f"unknown job: {job_name}", "known_jobs": list(_JOBS)}
-    background_tasks.add_task(job)
+    background_tasks.add_task(module.run)
     return {"status": "triggered", "job": job_name}
 
 

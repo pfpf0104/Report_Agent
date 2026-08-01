@@ -41,6 +41,10 @@ def test_trigger_known_backfill_job_returns_triggered():
 
     assert response.status_code == 200
     assert response.json() == {"status": "triggered", "job": "backfill_macro_rates"}
+    # 이 assert가 없으면 테스트가 거짓으로 통과한다. _JOBS가 임포트 시점에 함수
+    # 객체를 고정해 두면 패치가 무시되고 **진짜 job이 실행된다** — 유닛 테스트가
+    # BOK ECOS를 실제로 호출하고 DB에 쓰던 상태를 이 assert로 고정한다.
+    mock_run.assert_called_once()
 
 
 def test_trigger_unknown_job_returns_error_with_known_jobs_list():
