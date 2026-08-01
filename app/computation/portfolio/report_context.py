@@ -24,7 +24,12 @@ from datetime import date
 import numpy as np
 from sqlalchemy.orm import Session
 
-from app.computation.portfolio.constraints import ConstraintSet, apply_constraints, turnover
+from app.computation.portfolio.constraints import (
+    ConstraintSet,
+    apply_constraints,
+    relax_cap_to_feasible,
+    turnover,
+)
 from app.computation.portfolio.costs import CostModel, evaluate_rebalance
 from app.computation.portfolio.weighting import (
     apply_scores_as_tilt,
@@ -71,38 +76,6 @@ METHOD_CARDS = [
         "body": f"종목 상한 {DEFAULT_CONSTRAINTS.max_weight * 100:.0f}%를 걸어 집중을 제한한다. 상한 적용은 단순 절삭이 아니라 위반 자산을 고정하고 잔여 예산을 재배분하는 반복이다.",
     },
 ]
-
-
-def _effective_constraints(
-    constraints: ConstraintSet, n_assets: int
-) -> tuple[ConstraintSet, bool]:
-    """자산 수에 맞춰 상한을 조정한다. (조정된 제약, 완화했는지 여부)
-
-    상한은 1/n보다 낮을 수 없다 — n개 자산의 비중 합이 1.0이려면 최소 하나는
-    1/n 이상이어야 하기 때문이다. 설정값이 그보다 낮으면 어떤 배분도 불가능하다.
-
-    이 상황은 이론적 예외가 아니라 **백필 중에 정상적으로 발생한다.** 기본 상한
-    25%는 11개 섹터를 가정한 값인데, Phase 0 백필이 진행되는 동안에는 요건을
-    충족하는 섹터가 3~4개뿐일 수 있다. 그때 25%를 그대로 적용하면
-    InfeasibleConstraintError로 리포트 생성 전체가 실패한다 — 실제로 3개 자산
-    테스트에서 재현했다.
-
-    조용히 완화하지 않고 완화 여부를 반환해, 리포트의 가정 문구에 명시한다.
-    완화가 일어나면 상한이 정확히 1/n이 되는데, 이때 n개 비중이 각각 1/n 이하이면서
-    합이 1.0이려면 **전부 정확히 1/n**이어야 한다 — 즉 리스크패리티 결과가 완전히
-    덮이고 동일가중이 강제된다. 독자가 "리스크패리티"라고 적힌 페이지에서 동일가중을
-    보게 되므로 이 사실도 가정 문구에 함께 표시한다.
-    """
-    if constraints.max_weight is None:
-        return constraints, False
-
-    floor = 1.0 / n_assets
-    if constraints.max_weight >= floor:
-        return constraints, False
-
-    from dataclasses import replace
-
-    return replace(constraints, max_weight=floor), True
 
 
 def _sector_price_history(
@@ -172,7 +145,7 @@ def build_portfolio_context(
     scores = [score_by_sector[s] for s, _ in usable]
     tilted = apply_scores_as_tilt(neutral, scores, tilt_strength=tilt_strength)
 
-    effective, relaxed = _effective_constraints(constraints, len(usable))
+    effective, relaxed = relax_cap_to_feasible(constraints, len(usable))
     final = apply_constraints(tilted, effective)
 
     shares = risk_contribution_shares(final, covariance)

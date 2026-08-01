@@ -191,6 +191,16 @@ def test_summarize_of_empty_series_reports_insufficient_history():
     assert "이력 부족" in s.describe()
 
 
+def test_summarize_uses_a_human_readable_window_label_when_given():
+    """'252기 롤링'은 독자에게 아무 의미가 없다."""
+    series = RollingSeries(window=252, end_indices=[251], values=[1.0])
+    plain = summarize(series, "Sharpe").describe()
+    labelled = summarize(series, "Sharpe", "12개월(252거래일)").describe()
+
+    assert "252기 롤링" in plain
+    assert "12개월(252거래일) 롤링" in labelled
+
+
 def test_summarize_latest_is_none_when_last_window_is_undefined():
     series = RollingSeries(window=3, end_indices=[2, 3], values=[1.0, None])
     s = summarize(series, "Sharpe")

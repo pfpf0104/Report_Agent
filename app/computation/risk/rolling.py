@@ -205,16 +205,23 @@ class RollingSummary:
     average: float | None
     undefined_count: int
     observations: int
+    # 지면에 표시할 창 설명. "252기"는 독자에게 아무 의미가 없으므로
+    # 호출부가 "12개월(252거래일)" 같은 문구를 준다.
+    window_label: str = ""
+
+    @property
+    def window_text(self) -> str:
+        return self.window_label or f"{self.window}기"
 
     def describe(self, fmt: str = "{:.2f}") -> str:
         if self.observations == 0:
-            return f"{self.label}: 이력 부족(창 {self.window}기 미만)"
+            return f"{self.label}: 이력 부족({self.window_text} 창을 채우지 못함)"
 
         def f(v: float | None) -> str:
             return "—" if v is None else fmt.format(v)
 
         text = (
-            f"{self.label}({self.window}기 롤링): 최근 {f(self.latest)}, "
+            f"{self.label}({self.window_text} 롤링): 최근 {f(self.latest)}, "
             f"범위 {f(self.minimum)}~{f(self.maximum)}, 평균 {f(self.average)}"
         )
         if self.undefined_count:
@@ -222,11 +229,12 @@ class RollingSummary:
         return text
 
 
-def summarize(series: RollingSeries, label: str) -> RollingSummary:
+def summarize(series: RollingSeries, label: str, window_label: str = "") -> RollingSummary:
     """롤링 시리즈 요약. 값이 하나도 없으면 전부 None으로 둔다 — 0으로 채우지 않는다."""
     defined = series.defined_values
     return RollingSummary(
         label=label,
+        window_label=window_label,
         window=series.window,
         latest=series.values[-1] if series.values else None,
         minimum=min(defined) if defined else None,

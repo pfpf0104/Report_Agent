@@ -31,7 +31,7 @@
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import numpy as np
 
@@ -201,6 +201,37 @@ class ConstraintSet:
     min_weight: float = 0.0
     max_sector_weight: float | None = None
     max_turnover: float | None = None
+
+
+def relax_cap_to_feasible(
+    constraints: ConstraintSet, n_assets: int
+) -> tuple[ConstraintSet, bool]:
+    """자산 수에 맞춰 종목 상한을 최소한으로 완화한다. (조정된 제약, 완화 여부)
+
+    상한은 1/n보다 낮을 수 없다 — n개 비중의 합이 1.0이려면 최소 하나는 1/n
+    이상이어야 하기 때문이다. 설정값이 그보다 낮으면 어떤 배분도 불가능하고
+    `apply_constraints`가 InfeasibleConstraintError를 던진다.
+
+    이 상황은 이론적 예외가 아니라 **정상적으로 발생한다.** 기본 상한 25%는 11개
+    섹터를 가정한 값인데, 백필 중이거나 유니버스가 작으면 요건을 충족하는 자산이
+    3~4개뿐일 수 있다. 그때 25%를 그대로 적용하면 리포트 생성 전체가 실패한다
+    (3개 자산에서 실제로 재현됨).
+
+    조용히 완화하지 않고 완화 여부를 함께 반환한다 — 호출부는 이를 리포트의
+    가정 문구에 명시해야 한다. 완화가 일어나면 상한이 정확히 1/n이 되는데, 이때
+    n개 비중이 각각 1/n 이하이면서 합이 1.0이려면 **전부 정확히 1/n**이어야 한다.
+    즉 리스크패리티든 무엇이든 원래 비중 산출 결과가 완전히 덮이고 동일가중이
+    강제된다. 독자가 "리스크패리티"라고 적힌 페이지에서 동일가중을 보게 되므로
+    이 사실도 함께 표시해야 한다.
+    """
+    if constraints.max_weight is None:
+        return constraints, False
+
+    floor = 1.0 / n_assets
+    if constraints.max_weight >= floor:
+        return constraints, False
+
+    return replace(constraints, max_weight=floor), True
 
 
 def apply_constraints(
