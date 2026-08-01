@@ -113,7 +113,16 @@
 
 .chart-caption {
   font-size: 8px;
+  line-height: 1.5;
   color: var(--color-gray-600);
   text-align: right;
+  /* 차트 이미지 아래 여백을 당겨 캡션을 그림에 붙인다. */
   margin-top: -6px;
+}
+
+/* 캡션을 연달아 쓰면 위 규칙의 음수 마진이 앞 줄 위로 겹쳐 올라간다
+   (롤링 요약 3줄이 한 덩어리로 뭉쳐 읽을 수 없게 되는 것을 렌더링으로 확인).
+   두 번째 캡션부터는 정상 간격을 준다. */
+.chart-caption + .chart-caption {
+  margin-top: 2px;
 }

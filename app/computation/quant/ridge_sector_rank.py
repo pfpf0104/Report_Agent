@@ -32,8 +32,8 @@ from app.computation.quant.sector_embeddings import (
     generate_current_residuals,
     generate_frozen_hedge_training_set,
 )
-from app.computation.performance_disclosure import build_performance_pending_context
 from app.computation.portfolio.report_context import build_portfolio_context
+from app.computation.risk.report_context import build_performance_context
 from app.db.models.dim_asset import DimAsset
 from app.db.models.fact_market_daily import FactMarketDaily
 from app.db.point_in_time import visible_as_of
@@ -221,6 +221,26 @@ def _mtd_return(db: Session, asset_id: int, as_of: date) -> float | None:
     return float(end_row.adj_close / start_row.adj_close - 1) * 100
 
 
+# 성과 페이지의 벤치마크. GIPS는 벤치마크 병기를 요구하며, 섹터 ETF 유니버스에는
+# S&P 500(SPY)이 자연스러운 대응이다.
+PERFORMANCE_BENCHMARK = "SPY"
+
+
+def _performance(db: Session, as_of: date) -> dict:
+    """성과·리스크 페이지 컨텍스트.
+
+    유니버스는 11개 섹터 ETF 전체다 — 랭킹 결과와 무관하게 고정한다. 여기서
+    백테스트하는 것은 CallRank 신호가 아니라 리스크패리티 중립 배분이므로,
+    랭킹에 따라 유니버스가 흔들리면 안 된다(risk/report_context.py 참고).
+
+    이력이 부족하면 이 함수가 보류 컨텍스트를 그대로 돌려주므로, 호출부는
+    데이터 유무를 신경 쓰지 않아도 된다.
+    """
+    return build_performance_context(
+        db, as_of, list(SECTOR_ETF_BY_NAME.values()), PERFORMANCE_BENCHMARK
+    )
+
+
 def build_callrank_context(db: Session, as_of: date, leading_sector_seed: str = "Energy") -> dict:
     ranking = run_sector_ranking(as_of, leading_sector_seed)
 
@@ -234,7 +254,7 @@ def build_callrank_context(db: Session, as_of: date, leading_sector_seed: str = 
             "model_agreement": {},
             "what_and_why_cards": WHAT_AND_WHY_CARDS,
             "workflow_steps": PROCESS_STEPS,
-            **build_performance_pending_context(),
+            **_performance(db, as_of),
             **build_portfolio_context(db, as_of, [], SECTOR_ETF_BY_NAME),
         }
 
@@ -279,7 +299,7 @@ def build_callrank_context(db: Session, as_of: date, leading_sector_seed: str = 
         "model_agreement": ranking["model_agreement"],
         "what_and_why_cards": WHAT_AND_WHY_CARDS,
         "workflow_steps": PROCESS_STEPS,
-        **build_performance_pending_context(),
+        **_performance(db, as_of),
         **build_portfolio_context(db, as_of, ranking["normalized_direction"], SECTOR_ETF_BY_NAME),
     }
 
