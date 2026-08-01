@@ -5,10 +5,13 @@ import httpx
 import pytest
 import respx
 
+from datetime import date
+
 import app.ingestion.connectors.dart_client as dart_client
 from app.ingestion.connectors.dart_client import (
     DartApiError,
     extract_capital_total,
+    extract_filing_date,
     fetch_corp_code_map,
     fetch_single_company_financials,
 )
@@ -97,3 +100,17 @@ async def test_fetch_single_company_financials_api_error_raises():
 
 def test_extract_capital_total_returns_none_when_missing():
     assert extract_capital_total([{"account_nm": "매출액", "thstrm_amount": "1,000"}]) is None
+
+
+def test_extract_filing_date_parses_rcept_no_prefix():
+    # 실측(2026-08): 삼성전자 2023 사업연도 사업보고서 rcept_no.
+    accounts = [{"account_nm": "자본총계", "thstrm_amount": "1,000", "rcept_no": "20240312000736"}]
+    assert extract_filing_date(accounts) == date(2024, 3, 12)
+
+
+def test_extract_filing_date_returns_none_when_missing():
+    assert extract_filing_date([{"account_nm": "자본총계", "thstrm_amount": "1,000"}]) is None
+
+
+def test_extract_filing_date_returns_none_on_malformed_rcept_no():
+    assert extract_filing_date([{"account_nm": "자본총계", "rcept_no": "not-a-date"}]) is None

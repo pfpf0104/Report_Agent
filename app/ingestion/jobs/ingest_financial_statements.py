@@ -16,11 +16,16 @@ crtfc_key+corp_code+bsns_year=2023+reprt_code=11011)로 보통주 발행주식�
 직접 조회해 아래 상수와 정확히 일치함을 확인했다(삼성전자 5,969,782,550주,
 SK하이닉스 728,002,365주). 향후 분할·소각이 반영된 최신값이 필요하면 이 API를
 그대로 호출하도록 바꿀 수 있다 — 지금은 상수로 충분하다고 판단해 남겨둔다.
+
+knowledge_date: rcept_no(접수번호) 앞 8자리에서 실제 공시일을 뽑아 쓴다
+(app/ingestion/connectors/dart_client.py의 extract_filing_date 참고) — 이전에는
+"오늘"로 근사했는데(look-ahead는 안 만들지만 과도하게 보수적), rcept_dt 필드
+자체는 없어도 rcept_no로 정확한 날짜가 복원됨을 실측 확인해 교체했다.
 """
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 import httpx
 from sqlalchemy.orm import Session
@@ -31,6 +36,7 @@ from app.db.models.fact_financial_quarterly import FactFinancialQuarterly
 from app.ingestion.connectors.dart_client import (
     DartApiError,
     extract_capital_total,
+    extract_filing_date,
     fetch_corp_code_map,
     fetch_single_company_financials,
 )
@@ -50,7 +56,8 @@ STOCK_CODE = {
 
 async def _fetch_bps_for(
     client: httpx.AsyncClient, corp_map: dict[str, str], name: str, bsns_year: int
-) -> float | None:
+) -> tuple[float, date] | None:
+    """(BPS, 실제 공시일)을 반환한다. 실패하거나 필요한 필드가 없으면 None."""
     corp_code = corp_map.get(name)
     if corp_code is None:
         return None
@@ -61,12 +68,13 @@ async def _fetch_bps_for(
         # 보고서만 나와 있는 경우) — 호출부가 이전 연도로 재시도한다.
         return None
     capital_total = extract_capital_total(accounts)
-    if capital_total is None:
+    filing_date = extract_filing_date(accounts)
+    if capital_total is None or filing_date is None:
         return None
-    return capital_total / SHARES_OUTSTANDING[name]
+    return capital_total / SHARES_OUTSTANDING[name], filing_date
 
 
-async def _fetch_all_bps(bsns_year: int) -> tuple[dict[str, float | None], int]:
+async def _fetch_all_bps(bsns_year: int) -> tuple[dict[str, tuple[float, date] | None], int]:
     """bsns_year 사업보고서가 없으면 1년 전으로 한 번 더 시도한다."""
     async with httpx.AsyncClient() as client:
         corp_map = await fetch_corp_code_map(client)
@@ -96,21 +104,15 @@ def run(bsns_year: int | None = None) -> None:
             target_year = bsns_year or (datetime.now(timezone.utc).year - 1)
             bps_by_name, resolved_year = asyncio.run(_fetch_all_bps(target_year))
 
-            # knowledge_date = 인제스천 시점(오늘). 회계연도(fiscal_year)와 실제
-            # 공시 시점 사이에는 통상 수개월 간극이 있어, 이 구분 없이 과거 시점
-            # 리포트를 만들면 아직 공시되지 않은 실적을 당겨쓰게 된다.
-            #
-            # 엄밀히는 DART 응답의 rcept_dt(접수일자)를 쓰는 것이 정확하다. 오늘
-            # 날짜는 실제 공시일보다 항상 같거나 늦으므로 "덜 보수적"이 될 수는
-            # 없다 — 즉 look-ahead를 만들지는 않고, 최대 며칠 과하게 보수적일 뿐이라
-            # 안전한 방향의 근사다.
-            # TODO(네트워크 있는 세션): fnlttSinglAcntAll 응답에 rcept_dt가
-            # 포함되는지 실제 응답으로 확인하고, 있으면 그 값으로 교체할 것.
-            knowledge_date = datetime.now(timezone.utc).date()
-
-            for name, bps in bps_by_name.items():
-                if bps is None:
+            # knowledge_date = DART 응답의 rcept_no(접수번호) 앞 8자리에서 뽑은
+            # 실제 공시일. rcept_dt 필드는 없지만 rcept_no로 정확히 복원됨을
+            # 실측 확인했다(app/ingestion/connectors/dart_client.py의
+            # extract_filing_date docstring 참고) — 회계연도 말+90일 근사보다
+            # 정확하다.
+            for name, result in bps_by_name.items():
+                if result is None:
                     continue
+                bps, knowledge_date = result
                 asset = _get_or_create_asset(db, name)
                 row = (
                     db.query(FactFinancialQuarterly)

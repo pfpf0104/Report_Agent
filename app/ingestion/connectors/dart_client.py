@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import io
 import zipfile
+from datetime import date
 from xml.etree import ElementTree
 
 import httpx
@@ -97,4 +98,24 @@ def extract_capital_total(accounts: list[dict]) -> float | None:
                 return float(account["thstrm_amount"].replace(",", ""))
             except (KeyError, ValueError, AttributeError):
                 continue
+    return None
+
+
+def extract_filing_date(accounts: list[dict]) -> date | None:
+    """rcept_no(접수번호)의 앞 8자리에서 실제 공시(접수)일을 뽑는다.
+
+    fnlttSinglAcntAll 응답에는 rcept_dt 필드가 없지만(실측 확인), rcept_no의
+    앞 8자리가 YYYYMMDD 형식의 접수일임을 실제 응답으로 확인했다(2026-08 검증,
+    삼성전자/SK하이닉스 여러 연도에서 전부 3월 법정 제출기한 이전의 상식적인
+    날짜로 파싱됨). knowledge_date를 회계연도 말+90일로 근사하는 것보다 이 값이
+    더 정확하다 — 실제 공시일보다 이 값이 며칠~3주 정도 이르다.
+    """
+    for account in accounts:
+        rcept_no = account.get("rcept_no")
+        if not rcept_no or len(rcept_no) < 8:
+            continue
+        try:
+            return date(int(rcept_no[0:4]), int(rcept_no[4:6]), int(rcept_no[6:8]))
+        except ValueError:
+            continue
     return None

@@ -1,6 +1,7 @@
 """네트워크는 respx로 mock하지만 실제 로컬 Postgres에 쓰는 통합 테스트."""
 import io
 import zipfile
+from datetime import date
 
 import httpx
 import pytest
@@ -11,6 +12,7 @@ import app.ingestion.jobs.ingest_financial_statements as job
 from app.db.base import SessionLocal
 from app.db.models.dim_asset import DimAsset
 from app.db.models.fact_financial_quarterly import FactFinancialQuarterly
+from app.db.models.fact_market_daily import FactMarketDaily
 from app.db.models.ingestion_run import IngestionRun
 
 CORP_CODE_URL = "https://opendart.fss.or.kr/api/corpCode.xml"
@@ -39,7 +41,13 @@ def _setup(monkeypatch):
 
 
 def _cleanup(session, codes):
+    # 005930/000660은 fact_market_daily와 fact_financial_quarterly 양쪽에서
+    # 참조될 수 있는 자산이다(다른 테스트 파일/실제 운영 데이터) — dim_asset을
+    # 지우기 전에 두 fact 테이블 다 정리해야 FK 위반이 안 난다.
     session.query(FactFinancialQuarterly).filter(FactFinancialQuarterly.asset_id.in_(
+        session.query(DimAsset.asset_id).filter(DimAsset.code.in_(codes))
+    )).delete(synchronize_session=False)
+    session.query(FactMarketDaily).filter(FactMarketDaily.asset_id.in_(
         session.query(DimAsset.asset_id).filter(DimAsset.code.in_(codes))
     )).delete(synchronize_session=False)
     session.query(DimAsset).filter(DimAsset.code.in_(codes)).delete(synchronize_session=False)
@@ -64,12 +72,22 @@ def test_run_computes_bps_and_upserts(db):
     respx.get(CORP_CODE_URL).mock(return_value=httpx.Response(200, content=_corp_code_zip()))
     respx.get(FINANCIALS_URL, params={"corp_code": "00126380"}).mock(
         return_value=httpx.Response(
-            200, json={"status": "000", "message": "정상", "list": [{"account_nm": "자본총계", "thstrm_amount": "486,634,065,000,000"}]}
+            200,
+            json={
+                "status": "000",
+                "message": "정상",
+                "list": [{"account_nm": "자본총계", "thstrm_amount": "486,634,065,000,000", "rcept_no": "20260310000123"}],
+            },
         )
     )
     respx.get(FINANCIALS_URL, params={"corp_code": "00164779"}).mock(
         return_value=httpx.Response(
-            200, json={"status": "000", "message": "정상", "list": [{"account_nm": "자본총계", "thstrm_amount": "50,000,000,000,000"}]}
+            200,
+            json={
+                "status": "000",
+                "message": "정상",
+                "list": [{"account_nm": "자본총계", "thstrm_amount": "50,000,000,000,000", "rcept_no": "20260315000456"}],
+            },
         )
     )
 
@@ -82,6 +100,7 @@ def test_run_computes_bps_and_upserts(db):
     assert row.source == "dart"
     assert row.fiscal_year == 2025
     assert row.fiscal_quarter == 4
+    assert row.knowledge_date == date(2026, 3, 10)  # rcept_no 앞 8자리(실제 공시일)
 
     run_log = db.query(IngestionRun).filter_by(source="dart_financial_statements").order_by(IngestionRun.id.desc()).first()
     assert run_log.status == "success"
@@ -99,7 +118,12 @@ def test_run_falls_back_to_previous_year_when_report_not_yet_filed(db):
     )
     respx.get(FINANCIALS_URL, params={"corp_code": "00126380", "bsns_year": "2025"}).mock(
         return_value=httpx.Response(
-            200, json={"status": "000", "message": "정상", "list": [{"account_nm": "자본총계", "thstrm_amount": "486,634,065,000,000"}]}
+            200,
+            json={
+                "status": "000",
+                "message": "정상",
+                "list": [{"account_nm": "자본총계", "thstrm_amount": "486,634,065,000,000", "rcept_no": "20260310000123"}],
+            },
         )
     )
     respx.get(FINANCIALS_URL, params={"corp_code": "00164779", "bsns_year": "2025"}).mock(

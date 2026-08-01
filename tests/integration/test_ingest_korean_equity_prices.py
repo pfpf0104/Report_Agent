@@ -6,6 +6,7 @@ import respx
 import app.ingestion.jobs.ingest_korean_equity_prices as job
 from app.db.base import SessionLocal
 from app.db.models.dim_asset import DimAsset
+from app.db.models.fact_financial_quarterly import FactFinancialQuarterly
 from app.db.models.fact_market_daily import FactMarketDaily
 from app.db.models.ingestion_run import IngestionRun
 
@@ -26,7 +27,13 @@ def _set_credentials(monkeypatch):
 
 
 def _cleanup(session, codes):
+    # 005930/000660은 fact_market_daily와 fact_financial_quarterly 양쪽에서
+    # 참조될 수 있는 자산이다(다른 테스트 파일/실제 운영 데이터) — dim_asset을
+    # 지우기 전에 두 fact 테이블 다 정리해야 FK 위반이 안 난다.
     session.query(FactMarketDaily).filter(FactMarketDaily.asset_id.in_(
+        session.query(DimAsset.asset_id).filter(DimAsset.code.in_(codes))
+    )).delete(synchronize_session=False)
+    session.query(FactFinancialQuarterly).filter(FactFinancialQuarterly.asset_id.in_(
         session.query(DimAsset.asset_id).filter(DimAsset.code.in_(codes))
     )).delete(synchronize_session=False)
     session.query(DimAsset).filter(DimAsset.code.in_(codes)).delete(synchronize_session=False)

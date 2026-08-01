@@ -5,6 +5,12 @@
 ETF를 402(구독 필요)로 막아 대체 소스로 도입했다(2026-08 실측: XLE는 FMP에서
 402, Yahoo에서는 정상 응답).
 
+한국 코스피 종목은 심볼에 ".KS" 접미사를 붙인다(예: "005930.KS" = 삼성전자).
+2026-08 실측: 005930.KS/000660.KS 5년치가 정상 응답했고, 최신 종가가 KIS
+실시간 시세(app/ingestion/connectors/kis_client.py)와 정확히 일치함을 확인했다
+— backfill_korean_equity_prices.py가 이 경로로 5년 히스토리를 채운다(KIS는
+현재가 조회 API만 있고 히스토리 API가 없어 백필에는 못 쓴다).
+
 REPORT_AGENT_YAHOO_FINANCE_USER_AGENT로 User-Agent를 지정한다 — 기본 브라우저
 User-Agent 없이 호출하면 차단되는 사례가 있어 명시적으로 관리한다.
 """

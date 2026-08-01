@@ -61,12 +61,17 @@ def test_visible_as_of_excludes_rows_known_only_later(db):
     ))
     db.commit()
 
+    # 5년 백필로 fact_market_daily에 다른 자산의 행이 수천 건 있을 수 있다 —
+    # asset_id로 좁히지 않으면 이 테스트가 실제로 검증하려는 것(단일 자산의
+    # knowledge_date 필터링)과 무관한 이유로 실패/통과하게 된다.
+    base_query = db.query(FactMarketDaily).filter_by(asset_id=asset.asset_id)
+
     # 사건일(2026-01-05)은 지났지만 취득일(2026-06-01)은 아직인 시점
-    visible = visible_as_of(db.query(FactMarketDaily), FactMarketDaily, date(2026, 3, 1)).all()
+    visible = visible_as_of(base_query, FactMarketDaily, date(2026, 3, 1)).all()
     assert visible == []
 
     # 취득일 이후에는 보인다
-    visible = visible_as_of(db.query(FactMarketDaily), FactMarketDaily, date(2026, 6, 1)).all()
+    visible = visible_as_of(base_query, FactMarketDaily, date(2026, 6, 1)).all()
     assert len(visible) == 1
 
 
@@ -78,7 +83,8 @@ def test_visible_as_of_none_disables_filter(db):
     ))
     db.commit()
 
-    assert len(visible_as_of(db.query(FactMarketDaily), FactMarketDaily, None).all()) == 1
+    base_query = db.query(FactMarketDaily).filter_by(asset_id=asset.asset_id)
+    assert len(visible_as_of(base_query, FactMarketDaily, None).all()) == 1
 
 
 def test_valuation_ignores_bps_not_yet_disclosed_at_as_of(db):
