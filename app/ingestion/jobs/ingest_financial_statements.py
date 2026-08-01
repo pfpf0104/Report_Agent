@@ -7,13 +7,15 @@ residual_income_model.py의 SAMSUNG_BOOK_VALUE/SK_HYNIX_BOOK_VALUE 하드코딩�
 
 BPS = 자본총계(지배기업 소유주지분, DART 최신 사업보고서에서 매번 실제로 조회) /
 발행주식총수. 자본총계는 시점마다 바뀌는 값이라 DART에서 자동으로 가져오지만,
-발행주식총수는 이 세션이 확인한 DART 전용 API가 없어 상수로 고정한다 — 주식분할·
-자사주소각 등 저빈도 이벤트로만 바뀌므로 상수로 둬도 위험이 작지만, 그런 이벤트가
-있으면 SHARES_OUTSTANDING을 수동으로 갱신해야 한다.
+발행주식총수는 fnlttSinglAcntAll(전체 재무제표 계정) 응답에 포함되지 않아
+상수로 고정한다 — 주식분할·자사주소각 등 저빈도 이벤트로만 바뀌므로 상수로 둬도
+위험이 작지만, 그런 이벤트가 있으면 SHARES_OUTSTANDING을 수동으로 갱신해야 한다.
 
-TODO(확인 필요): SHARES_OUTSTANDING 값은 공개적으로 알려진 발행주식총수를 그대로
-썼다 — 이 세션은 네트워크가 막혀 있어 최신 값으로 재검증하지 못했다. 로컬 세션에서
-DART 사업보고서 원문이나 KRX 정보로 재확인할 것.
+SHARES_OUTSTANDING 실측 검증: DART 공식 "주식의 총수 현황" API(stockTotqySttus,
+crtfc_key+corp_code+bsns_year=2023+reprt_code=11011)로 보통주 발행주식총수를
+직접 조회해 아래 상수와 정확히 일치함을 확인했다(삼성전자 5,969,782,550주,
+SK하이닉스 728,002,365주). 향후 분할·소각이 반영된 최신값이 필요하면 이 API를
+그대로 호출하도록 바꿀 수 있다 — 지금은 상수로 충분하다고 판단해 남겨둔다.
 """
 from __future__ import annotations
 
@@ -35,7 +37,7 @@ from app.ingestion.connectors.dart_client import (
 from app.ingestion.run_tracker import track_ingestion_run
 
 # 발행주식총수(보통주 기준). 분할·자사주소각 등 저빈도 이벤트로만 바뀐다 —
-# TODO(확인 필요) 참고.
+# DART stockTotqySttus API로 실측 검증 완료(모듈 docstring 참고).
 SHARES_OUTSTANDING = {
     "삼성전자": 5_969_782_550,
     "SK하이닉스": 728_002_365,
