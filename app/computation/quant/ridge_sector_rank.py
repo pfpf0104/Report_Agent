@@ -32,6 +32,7 @@ from app.computation.quant.sector_embeddings import (
     generate_current_residuals,
     generate_frozen_hedge_training_set,
 )
+from app.computation.performance_disclosure import build_performance_pending_context
 from app.db.models.dim_asset import DimAsset
 from app.db.models.fact_market_daily import FactMarketDaily
 from app.db.point_in_time import visible_as_of
@@ -232,8 +233,7 @@ def build_callrank_context(db: Session, as_of: date, leading_sector_seed: str = 
             "model_agreement": {},
             "what_and_why_cards": WHAT_AND_WHY_CARDS,
             "workflow_steps": PROCESS_STEPS,
-            "backtest_chart_uri": _build_backtest_chart(as_of),
-            "backtest_summary": BACKTEST_SUMMARY,
+            **build_performance_pending_context(),
         }
 
     top_sector = ranking["normalized_direction"][0]["sector"]
@@ -277,8 +277,7 @@ def build_callrank_context(db: Session, as_of: date, leading_sector_seed: str = 
         "model_agreement": ranking["model_agreement"],
         "what_and_why_cards": WHAT_AND_WHY_CARDS,
         "workflow_steps": PROCESS_STEPS,
-        "backtest_chart_uri": _build_backtest_chart(as_of),
-        "backtest_summary": BACKTEST_SUMMARY,
+        **build_performance_pending_context(),
     }
 
 
@@ -307,48 +306,3 @@ PROCESS_STEPS = [
     {"title": "고정 헤지로 순위화", "body": "pre-2021 자료로 정한 표준화·PCA-32·Ridge 계수를 이후 매월 그대로 적용한다."},
     {"title": "세 모델의 순위 평균", "body": "세 passage 길이의 섹터 순위를 평균하고, 최소 6개 섹터가 있어야 거래 결정을 연다."},
 ]
-
-BACKTEST_SUMMARY = [
-    {"label": "Top 1 연환산 순수익률", "value": "42.1%", "caption": "연구 백테스트(합성 예시)"},
-    {"label": "같은 기간 SPY(S&P 500)", "value": "24.0%", "caption": "연구 백테스트(합성 예시)"},
-    {"label": "Treasury 조정 Sharpe", "value": "2.05", "caption": "연구 백테스트(합성 예시)"},
-]
-
-
-def _trailing_month_labels(as_of: date, n: int) -> list[str]:
-    """as_of가 속한 달을 마지막 라벨로 하는 n개월치 "YYYY-MM" 라벨(오름차순)."""
-    labels = []
-    year, month = as_of.year, as_of.month
-    for _ in range(n):
-        labels.append(f"{year}-{month:02d}")
-        month -= 1
-        if month == 0:
-            month = 12
-            year -= 1
-    return list(reversed(labels))
-
-
-def _build_backtest_chart(as_of: date) -> str:
-    """연구 백테스트 누적 성과 예시 차트. 실제 이력 데이터가 없어 결정적 시드로
-    그럴듯한 곡선을 만든다 — 첨부 보고서 4페이지의 형태(Top1 > SPY > Bottom1,
-    셋 다 100에서 시작해 우상향)만 재현하는 자리표시 차트다.
-    라벨은 as_of를 마지막 달로 고정한다 — 이전에는 연도를 하드코딩해 as_of가
-    바뀌어도 차트가 항상 2024-01~2025-12를 표시해 헤더의 "2023-12 ~ as_of"
-    설명과 어긋났다.
-    """
-    from app.rendering.chart_service import line_chart
-
-    rng = np.random.default_rng(as_of.toordinal())
-    n = 24
-    x_labels = _trailing_month_labels(as_of, n)
-
-    def _walk(drift: float, vol: float) -> list[float]:
-        steps = rng.normal(drift, vol, size=n)
-        return list(100 * np.cumprod(1 + steps))
-
-    series = {
-        "Top 1": _walk(0.028, 0.05),
-        "SPY(S&P 500)": _walk(0.017, 0.035),
-        "Bottom 1": _walk(0.006, 0.05),
-    }
-    return line_chart(x_labels, series, figsize=(6.2, 2.4))

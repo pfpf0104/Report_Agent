@@ -102,9 +102,9 @@ def test_build_callrank_context_smoke():
         "model_agreement",
         "what_and_why_cards",
         "workflow_steps",
-        "backtest_chart_uri",
-        "backtest_summary",
+        "performance_pending_title",
+        "gips_requirements",
     ):
         assert key in context, f"{key} 누락"
 
-    assert context["backtest_chart_uri"].startswith("data:image/png;base64,")
+    assert len(context["gips_requirements"]) == 3
