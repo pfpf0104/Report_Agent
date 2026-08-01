@@ -14,9 +14,10 @@ A-2의 정상상태 r 단일값을 역산해보면 그 범위는 삼성전자(�
 재현해 검산했다(예: 삼성전자 점진적 추격 229,640원, SK하이닉스 제한적 추격
 2,914,632원 등, 오차 수십 원 이내).
 
-TODO(실데이터 연동): book_value_0(분석 기준 BPS)은 지금 보고서 5페이지의 값을
-그대로 고정했다. DART 연동 후에는 fact_financial_quarterly에서 최신 분기
-BPS/EPS를 조회해 대체해야 한다.
+book_value_0(분석 기준 BPS)은 fact_financial_quarterly에 DART 실측값(자본총계 ÷
+발행주식총수, ingest_financial_statements.py)이 있으면 그걸 쓰고, 없으면 보고서
+고정값(SAMSUNG_BOOK_VALUE/SK_HYNIX_BOOK_VALUE)으로 폴백한다 — 현재가의 KIS
+실측/폴백 패턴(_resolve_current_price)과 동일한 구조다.
 
 현재가는 fact_market_daily에 KIS 데이터가 있으면 그걸 쓰고(ingest_korean_
 equity_prices.py), 없으면 보고서 고정값으로 폴백한다 — 이 세션은 네트워크가
@@ -31,6 +32,7 @@ from datetime import date
 from sqlalchemy.orm import Session
 
 from app.db.models.dim_asset import DimAsset
+from app.db.models.fact_financial_quarterly import FactFinancialQuarterly
 from app.db.models.fact_market_daily import FactMarketDaily
 
 
@@ -123,6 +125,7 @@ SK_HYNIX_SCENARIOS = [
 ]
 
 CURRENT_PRICE_FALLBACK = {"삼성전자": 208_500.0, "SK하이닉스": 1_401_000.0}
+BOOK_VALUE_FALLBACK = {"삼성전자": SAMSUNG_BOOK_VALUE, "SK하이닉스": SK_HYNIX_BOOK_VALUE}
 STOCK_CODE = {"삼성전자": "005930", "SK하이닉스": "000660"}
 
 WHAT_AND_WHY_CARDS = [
@@ -184,7 +187,7 @@ WORKFLOW_STEPS = [
 ]
 
 CHECKLIST_ITEMS = [
-    "BPS 최신화 — DART 연동 후 최신 분기 BPS로 book_value_0을 교체했는지 확인한다.",
+    "BPS 출처 확인 — DART 실측 BPS를 쓰고 있는지, 폴백 고정값으로 떨어졌는지 확인한다(발행주식총수는 상수라 분할·자사주 소각 시 별도 갱신 필요).",
     "자기자본비용 근거 — 무위험금리·베타·에퀴티리스크프리미엄 갱신분이 r에 반영됐는지 점검한다.",
     "시나리오 확률 재검토 — 실제 업황 전개가 특정 시나리오로 쏠리면 확률가중치를 재조정한다.",
     "r>g 성립 확인 — 잔여가치 계산의 분모(r−g)가 모든 시나리오에서 양수인지 검증한다.",
@@ -248,8 +251,8 @@ def _risk_cards(company: dict, scenarios: list[RimScenario]) -> list[dict]:
             "body": f"기준 시나리오({company['base_scenario'].name})의 r을 ±1.0%p 흔들면 적정가는 {sensitivity_range} 구간에서 움직인다.",
         },
         {
-            "title": "BPS 최신화 리스크",
-            "body": f"현재 장부가치 {company['book_value']:,.0f}원은 DART 연동 전 보고서 고정값이다. 최신 분기 실적과 괴리가 있을 수 있다.",
+            "title": "BPS 데이터 소스",
+            "body": f"현재 장부가치 {company['book_value']:,.0f}원의 출처: {company['book_value_source']}. 발행주식총수는 상수로 고정돼 있어 분할·자사주 소각 시 별도 갱신이 필요하다.",
         },
     ]
 
@@ -275,6 +278,32 @@ def _resolve_current_price(db: Session, name: str) -> tuple[float, str]:
     if price is not None:
         return price, "KIS 실시간 시세"
     return CURRENT_PRICE_FALLBACK[name], "보고서 고정값(KIS 데이터 없음)"
+
+
+def _latest_bps(db: Session, stock_code: str) -> tuple[float, int] | None:
+    asset = db.query(DimAsset).filter_by(code=stock_code).first()
+    if asset is None:
+        return None
+    row = (
+        db.query(FactFinancialQuarterly)
+        .filter_by(asset_id=asset.asset_id)
+        .filter(FactFinancialQuarterly.bps.isnot(None))
+        .order_by(FactFinancialQuarterly.fiscal_year.desc(), FactFinancialQuarterly.fiscal_quarter.desc())
+        .first()
+    )
+    if row is None or row.bps is None:
+        return None
+    return float(row.bps), row.fiscal_year
+
+
+def _resolve_book_value(db: Session, name: str) -> tuple[float, str]:
+    """DART 실측 BPS(ingest_financial_statements.py)가 fact_financial_quarterly에
+    있으면 그걸, 없으면 보고서 고정값을 쓴다(현재가와 동일한 실측/폴백 패턴)."""
+    result = _latest_bps(db, STOCK_CODE[name])
+    if result is not None:
+        bps, fiscal_year = result
+        return bps, f"DART {fiscal_year}년 사업보고서 실측 BPS"
+    return BOOK_VALUE_FALLBACK[name], "보고서 고정값(DART 데이터 없음)"
 
 
 def _value_composition_row(company: dict) -> list[str]:
@@ -309,7 +338,8 @@ def _pbr_cross_check_row(company: dict) -> list[str]:
     ]
 
 
-def _company_row(db: Session, name: str, book_value: float, scenarios: list[RimScenario]) -> dict:
+def _company_row(db: Session, name: str, scenarios: list[RimScenario]) -> dict:
+    book_value, book_value_source = _resolve_book_value(db, name)
     result = probability_weighted_value(book_value, scenarios)
     current, price_source = _resolve_current_price(db, name)
     fair_value = result["weighted_value"]
@@ -318,6 +348,7 @@ def _company_row(db: Session, name: str, book_value: float, scenarios: list[RimS
     return {
         "name": name,
         "book_value": book_value,
+        "book_value_source": book_value_source,
         "current_price": current,
         "price_source": price_source,
         "fair_value": fair_value,
@@ -364,8 +395,8 @@ def _assumption_rows(company: dict, scenarios: list[RimScenario]) -> list[list[s
 
 
 def build_valuation_context(db: Session, as_of: date) -> dict:
-    samsung = _company_row(db, "삼성전자", SAMSUNG_BOOK_VALUE, SAMSUNG_SCENARIOS)
-    hynix = _company_row(db, "SK하이닉스", SK_HYNIX_BOOK_VALUE, SK_HYNIX_SCENARIOS)
+    samsung = _company_row(db, "삼성전자", SAMSUNG_SCENARIOS)
+    hynix = _company_row(db, "SK하이닉스", SK_HYNIX_SCENARIOS)
 
     cards = [
         {
@@ -435,5 +466,5 @@ def build_valuation_context(db: Session, as_of: date) -> dict:
         "assumption_rows": _assumption_rows(samsung, SAMSUNG_SCENARIOS) + _assumption_rows(hynix, SK_HYNIX_SCENARIOS),
         "value_composition_rows": [_value_composition_row(samsung), _value_composition_row(hynix)],
         "pbr_rows": [_pbr_cross_check_row(samsung), _pbr_cross_check_row(hynix)],
-        "source": "독립 투자분석 보고서 (분석 기준 BPS는 보고서 고정값, DART 연동 전)",
+        "source": "독립 투자분석 보고서 (분석 기준 BPS는 DART 실측 우선, 데이터 없으면 보고서 고정값)",
     }

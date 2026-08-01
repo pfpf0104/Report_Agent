@@ -110,7 +110,7 @@
     {{ report_header(
       "SAMSUNG ELECTRONICS",
       samsung.name ~ " 시나리오별 적정가",
-      "장부가치 " ~ "{:,.0f}".format(samsung.book_value) ~ "원 기준, 자기자본비용은 시나리오별로 9.5~11.5%.",
+      "장부가치 " ~ "{:,.0f}".format(samsung.book_value) ~ "원(" ~ samsung.book_value_source ~ ") 기준, 자기자본비용은 시나리오별로 9.5~11.5%.",
       ["현재가 " ~ "{:,.0f}".format(samsung.current_price) ~ "원(" ~ samsung.price_source ~ ")"]
     ) }}
 
@@ -136,7 +136,7 @@
     <div style="margin-top:14px; font-weight:700; font-size:9.5px; color:#1f2933;">시나리오별 5개년 명시적 ROE 경로</div>
     <img src="{{ samsung.roe_chart_uri }}" style="width:100%; margin-top:4px;">
   </div>
-  {{ report_footer("삼성전자(005930) · 분석 기준 BPS는 보고서 고정값") }}
+  {{ report_footer("삼성전자(005930) · 분석 기준 BPS 출처: " ~ samsung.book_value_source) }}
 </div>
 
 <div class="page">
@@ -145,7 +145,7 @@
     {{ report_header(
       "SK HYNIX",
       hynix.name ~ " 시나리오별 적정가",
-      "장부가치 " ~ "{:,.0f}".format(hynix.book_value) ~ "원 기준, 자기자본비용은 시나리오별로 10.0~12.0%.",
+      "장부가치 " ~ "{:,.0f}".format(hynix.book_value) ~ "원(" ~ hynix.book_value_source ~ ") 기준, 자기자본비용은 시나리오별로 10.0~12.0%.",
       ["현재가 " ~ "{:,.0f}".format(hynix.current_price) ~ "원(" ~ hynix.price_source ~ ")"]
     ) }}
 
@@ -171,7 +171,7 @@
     <div style="margin-top:14px; font-weight:700; font-size:9.5px; color:#1f2933;">시나리오별 5개년 명시적 ROE 경로</div>
     <img src="{{ hynix.roe_chart_uri }}" style="width:100%; margin-top:4px;">
   </div>
-  {{ report_footer("SK하이닉스(000660) · 분석 기준 BPS는 보고서 고정값") }}
+  {{ report_footer("SK하이닉스(000660) · 분석 기준 BPS 출처: " ~ hynix.book_value_source) }}
 </div>
 
 <div class="page">

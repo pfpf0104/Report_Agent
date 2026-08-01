@@ -2,6 +2,7 @@ from fastapi import APIRouter, BackgroundTasks
 
 from app.ingestion.jobs import (
     ingest_equity_prices,
+    ingest_financial_statements,
     ingest_korean_equity_prices,
     ingest_macro_rates,
     ingest_real_estate_deals,
@@ -13,6 +14,7 @@ _JOBS = {
     "equity_prices": ingest_equity_prices.run,
     "korean_equity_prices": ingest_korean_equity_prices.run,
     "macro_rates": ingest_macro_rates.run,
+    "financial_statements": ingest_financial_statements.run,
     "real_estate_deals": ingest_real_estate_deals.run,
 }
 
