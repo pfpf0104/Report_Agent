@@ -17,6 +17,13 @@ router = APIRouter()
 
 _NEEDS_REVIEW_STATUSES = ("unverified", "mismatch", "check_failed")
 
+# 임의로 큰 PDF가 업로드돼 메모리를 고갈시키는 걸 막는다. FnGuide류 재무제표
+# PDF는 수백 KB~수 MB대라 50MB면 실사용 사례를 넉넉히 커버한다.
+_MAX_UPLOAD_SIZE_BYTES = 50 * 1024 * 1024
+# PDF 매직 넘버("%PDF-"). Content-Type/확장자는 클라이언트가 임의로 보내는
+# 값이라 신뢰할 수 없다 — 실제 파일 내용으로 한 번 더 검증한다.
+_PDF_MAGIC_BYTES = b"%PDF-"
+
 
 def _value_to_dict(value: ExtractedValue) -> dict:
     return {
@@ -42,7 +49,28 @@ async def upload_pdf(
     if file.content_type != "application/pdf" and not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="PDF 파일만 업로드할 수 있다")
 
-    content = await file.read()
+    # 크기 제한을 넘으면 전체를 다 읽지 않고 즉시 끊는다 — file.read()로 전체를
+    # 받은 뒤 길이를 재는 방식은 이미 메모리에 다 올라온 뒤라 제한의 의미가 없다.
+    chunks: list[bytes] = []
+    total_size = 0
+    while True:
+        chunk = await file.read(1024 * 1024)
+        if not chunk:
+            break
+        total_size += len(chunk)
+        if total_size > _MAX_UPLOAD_SIZE_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"파일이 너무 크다(최대 {_MAX_UPLOAD_SIZE_BYTES // (1024*1024)}MB)",
+            )
+        chunks.append(chunk)
+    content = b"".join(chunks)
+
+    # Content-Type/확장자는 클라이언트가 보내는 값이라 신뢰할 수 없다 —
+    # 실제 파일 시그니처(매직 바이트)로 한 번 더 검증한다.
+    if not content.startswith(_PDF_MAGIC_BYTES):
+        raise HTTPException(status_code=400, detail="유효한 PDF 파일이 아니다")
+
     document = await ingest_pdf(
         db, filename=file.filename, content=content, company_name=company_name, bsns_year=bsns_year
     )

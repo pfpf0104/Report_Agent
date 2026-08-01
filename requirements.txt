@@ -8,6 +8,10 @@ uvicorn[standard]==0.52.0
 python-dotenv==1.2.2
 pydantic==2.13.4
 pydantic-settings==2.14.2
+# FastAPI의 UploadFile(File(...))이 요구하는 런타임 의존성 — 누락 상태였다면
+# extraction_router.py의 /upload 엔드포인트가 임포트 시점에 즉시 RuntimeError로
+# 죽는다(실측: pytest 수집 단계에서 재현됨).
+python-multipart==0.0.32
 
 # --- Database ---
 sqlalchemy==2.0.51

@@ -95,20 +95,60 @@ def test_backfill_sets_knowledge_date_to_actual_filing_date_not_today(db, monkey
 
 
 @respx.mock
-def test_backfill_skips_year_already_present(db):
+def test_backfill_skips_years_already_present_without_calling_dart(db, monkeypatch):
+    """핵심 회귀: 재개 가능성. 대상 5개년이 전부 DB에 이미 있으면 DART API를
+    아예 호출하지 않아야 한다(재실행 시 쿼터 낭비 방지). corpCode.xml 호출조차
+    없어야 하므로, mock을 등록하지 않고 실제로 호출되면 respx가 예외를 낸다."""
+    samsung = DimAsset(asset_type="EQUITY", code="005930", name_kr="삼성전자", currency="KRW")
+    hynix = DimAsset(asset_type="EQUITY", code="000660", name_kr="SK하이닉스", currency="KRW")
+    db.add_all([samsung, hynix])
+    db.commit()
+    db.refresh(samsung)
+    db.refresh(hynix)
+
+    current_year = date.today().year
+    for asset in (samsung, hynix):
+        for offset in range(1, job.BACKFILL_YEARS + 1):
+            db.add(
+                FactFinancialQuarterly(
+                    asset_id=asset.asset_id, fiscal_year=current_year - offset, fiscal_quarter=4,
+                    knowledge_date=date(current_year - offset + 1, 3, 12), bps=99999.0, source="manual_seed",
+                )
+            )
+    db.commit()
+
+    # respx.mock()이 활성화된 상태에서 등록되지 않은 URL이 호출되면
+    # respx.MockUnmatchedRequestError(ConnectionError 계열)가 즉시 발생한다 —
+    # job.run()이 예외 없이 끝나야 API를 호출하지 않았다는 뜻이다.
+    job.run()
+
+    row = db.query(FactFinancialQuarterly).filter_by(asset_id=samsung.asset_id, fiscal_year=current_year - 1).one()
+    assert row.source == "manual_seed"  # 덮어쓰지 않았어야 한다
+    assert float(row.bps) == 99999.0
+
+
+@respx.mock
+def test_backfill_only_fetches_missing_years(db):
+    """일부 연도만 DB에 있으면, 그 연도는 건너뛰고 나머지만 조회한다."""
     samsung = DimAsset(asset_type="EQUITY", code="005930", name_kr="삼성전자", currency="KRW")
     db.add(samsung)
     db.commit()
     db.refresh(samsung)
+
+    current_year = date.today().year
+    existing_year = current_year - 1
     db.add(
         FactFinancialQuarterly(
-            asset_id=samsung.asset_id, fiscal_year=date.today().year - 1, fiscal_quarter=4,
-            knowledge_date=date(date.today().year, 3, 12), bps=99999.0, source="manual_seed",
+            asset_id=samsung.asset_id, fiscal_year=existing_year, fiscal_quarter=4,
+            knowledge_date=date(existing_year + 1, 3, 12), bps=99999.0, source="manual_seed",
         )
     )
     db.commit()
 
     respx.get(CORP_CODE_URL).mock(return_value=httpx.Response(200, content=_corp_code_zip()))
+    respx.get(FINANCIALS_URL, params={"corp_code": "00126380", "bsns_year": str(existing_year)}).mock(
+        side_effect=AssertionError("이미 있는 연도는 조회하면 안 된다")
+    )
     respx.get(FINANCIALS_URL).mock(
         return_value=httpx.Response(
             200,
@@ -122,10 +162,13 @@ def test_backfill_skips_year_already_present(db):
 
     job.run()
 
-    row = db.query(FactFinancialQuarterly).filter_by(
-        asset_id=samsung.asset_id, fiscal_year=date.today().year - 1
+    existing_row = db.query(FactFinancialQuarterly).filter_by(
+        asset_id=samsung.asset_id, fiscal_year=existing_year
     ).one()
-    # upsert 방식이라 값 자체는 갱신될 수 있지만(재계산이 안전), source는 최소한
-    # 백필이 실제로 이 행을 건드렸는지 확인하는 용도로만 쓴다 — 여기서는 존재
-    # 자체(중복 asset 생성 없이 단일 행)만 확인한다.
-    assert db.query(FactFinancialQuarterly).filter_by(asset_id=samsung.asset_id).count() >= 1
+    assert existing_row.source == "manual_seed"
+
+    new_rows = db.query(FactFinancialQuarterly).filter(
+        FactFinancialQuarterly.asset_id == samsung.asset_id, FactFinancialQuarterly.fiscal_year != existing_year
+    ).all()
+    assert len(new_rows) > 0
+    assert all(r.source == "dart_backfill" for r in new_rows)

@@ -15,6 +15,13 @@ knowledge_date: rcept_no(접수번호) 앞 8자리에서 실제 공시일을 뽑
 중요하다 — 예를 들어 2022 사업보고서(실제 공시 2023-03)를 2026년에 백필하면서
 knowledge_date=2026을 넣으면 "2023~2025년 시점 리포트는 이 BPS를 몰랐다"고
 잘못 표시하게 된다. 실제 공시일을 쓰면 이 문제가 원천적으로 없다.
+
+재개 가능성: DB에 이미 있는 (asset, fiscal_year)는 API 호출 자체를 건너뛴다.
+다른 백필 job들(backfill_macro_rates.py 등)은 이미 이렇게 동작하는데, 이
+파일은 처음에 매 실행마다 5개년 x 2개사 전부를 무조건 다시 조회해 재실행 시
+불필요한 DART API 쿼터를 소모했다 — 재무제표는 특히 회사당 요청 수가 적어서
+비용이 커 보이지 않지만, 스케줄러가 이 job을 반복 실행하거나 여러 자산으로
+확장되면 누적된다.
 """
 from __future__ import annotations
 
@@ -69,52 +76,60 @@ def _get_or_create_asset(db: Session, name: str) -> DimAsset:
     return asset
 
 
+def _existing_fiscal_years(db: Session, asset_id: int) -> set[int]:
+    rows = db.query(FactFinancialQuarterly.fiscal_year).filter_by(asset_id=asset_id, fiscal_quarter=4).all()
+    return {r[0] for r in rows}
+
+
 def run() -> None:
     db = SessionLocal()
     try:
         with track_ingestion_run(db, "backfill_financial_statements") as ingestion:
             current_year = datetime.now(timezone.utc).year
             # 아직 공시 안 됐을 올해는 제외하고, 직전 5개 사업연도를 대상으로 한다.
-            years = list(range(current_year - BACKFILL_YEARS, current_year))
+            all_years = list(range(current_year - BACKFILL_YEARS, current_year))
             inserted_total = 0
+
+            # 회사별로 이미 DB에 있는 연도는 API 호출 대상에서 뺀다(재개 가능성).
+            assets_by_name = {name: _get_or_create_asset(db, name) for name in SHARES_OUTSTANDING}
+            years_to_fetch_by_name = {
+                name: [y for y in all_years if y not in _existing_fiscal_years(db, asset.asset_id)]
+                for name, asset in assets_by_name.items()
+            }
 
             async def _fetch_all():
                 async with httpx.AsyncClient() as client:
                     corp_map = await fetch_corp_code_map(client)
-                    results: dict[int, dict[str, tuple[float, date] | None]] = {}
-                    for year in years:
-                        results[year] = {
-                            name: await _fetch_bps_for_year(client, corp_map, name, year)
-                            for name in SHARES_OUTSTANDING
+                    results: dict[str, dict[int, tuple[float, date] | None]] = {}
+                    for name, years in years_to_fetch_by_name.items():
+                        results[name] = {
+                            year: await _fetch_bps_for_year(client, corp_map, name, year) for year in years
                         }
                     return results
 
-            bps_by_year = asyncio.run(_fetch_all())
+            if any(years_to_fetch_by_name.values()):
+                bps_by_name = asyncio.run(_fetch_all())
+            else:
+                bps_by_name = {name: {} for name in SHARES_OUTSTANDING}
 
-            for year, results_by_name in bps_by_year.items():
-                for name, result in results_by_name.items():
+            for name, results_by_year in bps_by_name.items():
+                asset = assets_by_name[name]
+                for year, result in results_by_year.items():
                     if result is None:
                         continue
                     bps, knowledge_date = result
-                    asset = _get_or_create_asset(db, name)
-                    row = (
-                        db.query(FactFinancialQuarterly)
-                        .filter_by(asset_id=asset.asset_id, fiscal_year=year, fiscal_quarter=4)
-                        .first()
+                    row = FactFinancialQuarterly(
+                        asset_id=asset.asset_id,
+                        fiscal_year=year,
+                        fiscal_quarter=4,
+                        knowledge_date=knowledge_date,
+                        bps=bps,
+                        source="dart_backfill",
                     )
-                    if row is None:
-                        row = FactFinancialQuarterly(
-                            asset_id=asset.asset_id,
-                            fiscal_year=year,
-                            fiscal_quarter=4,
-                            knowledge_date=knowledge_date,
-                        )
-                        db.add(row)
-                        inserted_total += 1
-                    row.bps = bps
-                    row.source = "dart_backfill"
+                    db.add(row)
+                    inserted_total += 1
                 db.commit()
 
-            ingestion.raw_archive_path = f"data/raw_archive/dart (inserted={inserted_total} rows across {len(years)} years)"
+            ingestion.raw_archive_path = f"data/raw_archive/dart (inserted={inserted_total} rows)"
     finally:
         db.close()

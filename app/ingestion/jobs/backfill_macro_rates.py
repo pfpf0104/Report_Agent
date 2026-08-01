@@ -16,6 +16,9 @@ ingest_macro_rates.py와 달리, 이 job은 과거 구간을 한 번에 채운�
     "없는 것만 채우는" 방식이라 재실행해도 안전하다.
   - 단위는 ingest_macro_rates.py와 동일하게 bp로 정규화한다(BOK는 %를 준다,
     G13 규약 참고).
+  - HTTP 호출은 단일 이벤트 루프·단일 AsyncClient로 전부 처리한다(_fetch_all_years).
+    자산×연도 조합마다 asyncio.run()을 반복 호출하던 이전 버전은 매번 새 이벤트
+    루프와 커넥션을 만들어 버려 다른 백필 job들과의 패턴 일관성도 깨져 있었다.
 """
 from __future__ import annotations
 
@@ -58,6 +61,20 @@ async def _fetch_year(client: httpx.AsyncClient, item_code: str, year: int) -> l
     return await fetch_statistic_search(client, STAT_CODE, "D", start, end, item_code, start_no=1, end_no=400)
 
 
+async def _fetch_all_years(codes: dict[str, str], years: list[int]) -> dict[str, dict[int, list[dict]]]:
+    """다른 백필 job들과 동일 패턴 — 하나의 이벤트 루프·클라이언트로 전체를 가져온다.
+
+    이전에는 (자산 x 연도) 조합마다 asyncio.run()을 따로 호출해 매번 새 이벤트
+    루프와 httpx.AsyncClient를 만들고 버렸다(10회, 연결 재사용 없이 TCP 핸드셰이크
+    반복) — 다른 백필 job들의 "_fetch_all() 한 번만 호출" 패턴과도 어긋났다.
+    """
+    async with httpx.AsyncClient() as client:
+        results: dict[str, dict[int, list[dict]]] = {}
+        for code, item_code in codes.items():
+            results[code] = {year: await _fetch_year(client, item_code, year) for year in years}
+        return results
+
+
 def run() -> None:
     db = SessionLocal()
     try:
@@ -66,17 +83,13 @@ def run() -> None:
             years = list(range(today.year - BACKFILL_YEARS + 1, today.year + 1))
             inserted_total = 0
 
-            for code, item_code in MACRO_SERIES.items():
+            rows_by_code = asyncio.run(_fetch_all_years(MACRO_SERIES, years))
+
+            for code, rows_by_year in rows_by_code.items():
                 asset = _get_or_create_macro_asset(db, code)
                 existing = _existing_trade_dates(db, asset.asset_id)
 
-                for year in years:
-
-                    async def _fetch():
-                        async with httpx.AsyncClient() as client:
-                            return await _fetch_year(client, item_code, year)
-
-                    rows = asyncio.run(_fetch())
+                for rows in rows_by_year.values():
                     for row in rows:
                         trade_date = datetime.strptime(row["TIME"], "%Y%m%d").date()
                         if trade_date in existing:
@@ -94,7 +107,7 @@ def run() -> None:
                         )
                         existing.add(trade_date)
                         inserted_total += 1
-                    db.commit()
+                db.commit()
 
             ingestion.raw_archive_path = f"data/raw_archive/bok (inserted={inserted_total} rows, {len(years)}y)"
     finally:
