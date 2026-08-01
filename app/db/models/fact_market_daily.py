@@ -19,6 +19,10 @@ class FactMarketDaily(Base):
 
     asset_id: Mapped[int] = mapped_column(ForeignKey("dim_asset.asset_id"), primary_key=True)
     trade_date: Mapped[object] = mapped_column(Date, primary_key=True)
+    # 이 시세를 "알 수 있게 된" 날. trade_date(사건 발생일)와 구분한다 —
+    # as_of 조회는 반드시 이 컬럼으로 필터링해 look-ahead bias를 막는다
+    # (app/db/point_in_time.py 참고).
+    knowledge_date: Mapped[object] = mapped_column(Date, nullable=False, index=True)
     open: Mapped[float | None] = mapped_column(Numeric(18, 4))
     high: Mapped[float | None] = mapped_column(Numeric(18, 4))
     low: Mapped[float | None] = mapped_column(Numeric(18, 4))

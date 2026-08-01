@@ -13,3 +13,6 @@ data/raw_archive/
 
 # PDF 자산화 업로드 원본 — 런타임 산출물, 소스 아님(app/extraction/pipeline.py)
 data/pdf_uploads/
+
+# 참고문헌 PDF는 저작권 문서라 커밋하지 않는다 — references/download_references.sh로 각자 받는다.
+references/*.pdf

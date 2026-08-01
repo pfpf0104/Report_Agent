@@ -83,18 +83,19 @@
   <div class="top-bar"></div>
   <div class="page-body">
     {{ report_header(
-      "REALIZED OPERATION",
-      "성과와 운용 경로",
-      "연구 백테스트의 전체 누적경로를 예시로 본다 (합성 데이터 — 실제 운용 이력 아님).",
-      ["2023-12 ~ " ~ as_of[:7], "시작값=100"]
+      "PERFORMANCE REPORTING",
+      "성과 보고 준비 상태",
+      "실제 백테스트 엔진이 구현되기 전까지 성과 수치를 싣지 않는다.",
+      ["GIPS 요건 충족 시 복원", "방법론 검증은 앞 페이지 참조"]
     ) }}
 
-    {{ metric_cards(backtest_summary) }}
+    {{ callout_box("warning", performance_pending_title, performance_pending_body) }}
+    {{ callout_box("info", methodology_ready_title, methodology_ready_body) }}
 
-    <img src="{{ backtest_chart_uri }}" style="width:100%; margin: 6px 0 2px;">
-    <div class="chart-caption">합성 예시 데이터 — 실제 백테스트 결과가 아닙니다.</div>
+    <div style="margin-top:14px; font-weight:700; font-size:9.5px; color:#1f2933;">성과 페이지 복원 시 충족해야 할 GIPS 요건</div>
+    {{ info_cards(gips_requirements) }}
   </div>
-  {{ report_footer("누적지수는 100 기준 · 거래비용은 실제 슬리브 전환에 반영") }}
+  {{ report_footer("성과 미기재는 의도된 것 — 근거 없는 수치를 싣지 않기 위함") }}
 </div>
 
 <div class="page">

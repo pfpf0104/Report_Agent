@@ -84,29 +84,19 @@
   <div class="top-bar"></div>
   <div class="page-body">
     {{ report_header(
-      "PERFORMANCE AND RISK DEFENSE",
-      "성과와 위험방어",
-      "비용 후 지수 슬리브 시뮬레이션 (합성 예시 — 실제 운용 이력 아님)",
-      ["단순 Sharpe = 연환산 평균수익 / 연환산 변동성"]
+      "PERFORMANCE REPORTING",
+      "성과 보고 준비 상태",
+      "실제 백테스트 엔진이 구현되기 전까지 성과 수치를 싣지 않는다.",
+      ["GIPS 요건 충족 시 복원", "컨트롤러 검산은 앞 페이지 참조"]
     ) }}
 
-    <img src="{{ backtest_chart_uri }}" style="width:100%; margin: 6px 0 2px;">
-    <div class="chart-caption">합성 예시 데이터 — 실제 백테스트 결과가 아닙니다.</div>
+    {{ callout_box("warning", performance_pending_title, performance_pending_body) }}
+    {{ callout_box("info", methodology_ready_title, methodology_ready_body) }}
 
-    {% if backtest_table_rows %}
-    <table class="data-table">
-      <thead>
-        <tr><th>연도</th><th>MetroGuard-KR</th><th>D3 중립</th><th>공식 벤치마크</th><th>벤치마크 대비</th></tr>
-      </thead>
-      <tbody>
-        {% for row in backtest_table_rows %}
-        <tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    {% endif %}
+    <div style="margin-top:14px; font-weight:700; font-size:9.5px; color:#1f2933;">성과 페이지 복원 시 충족해야 할 GIPS 요건</div>
+    {{ info_cards(gips_requirements) }}
   </div>
-  {{ report_footer("누적지수는 100 기준 · 부분연도 포함") }}
+  {{ report_footer("성과 미기재는 의도된 것 — 근거 없는 수치를 싣지 않기 위함") }}
 </div>
 
 <div class="page">

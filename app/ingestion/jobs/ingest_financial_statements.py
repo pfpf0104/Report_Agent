@@ -96,6 +96,18 @@ def run(bsns_year: int | None = None) -> None:
             target_year = bsns_year or (datetime.now(timezone.utc).year - 1)
             bps_by_name, resolved_year = asyncio.run(_fetch_all_bps(target_year))
 
+            # knowledge_date = 인제스천 시점(오늘). 회계연도(fiscal_year)와 실제
+            # 공시 시점 사이에는 통상 수개월 간극이 있어, 이 구분 없이 과거 시점
+            # 리포트를 만들면 아직 공시되지 않은 실적을 당겨쓰게 된다.
+            #
+            # 엄밀히는 DART 응답의 rcept_dt(접수일자)를 쓰는 것이 정확하다. 오늘
+            # 날짜는 실제 공시일보다 항상 같거나 늦으므로 "덜 보수적"이 될 수는
+            # 없다 — 즉 look-ahead를 만들지는 않고, 최대 며칠 과하게 보수적일 뿐이라
+            # 안전한 방향의 근사다.
+            # TODO(네트워크 있는 세션): fnlttSinglAcntAll 응답에 rcept_dt가
+            # 포함되는지 실제 응답으로 확인하고, 있으면 그 값으로 교체할 것.
+            knowledge_date = datetime.now(timezone.utc).date()
+
             for name, bps in bps_by_name.items():
                 if bps is None:
                     continue
@@ -106,7 +118,12 @@ def run(bsns_year: int | None = None) -> None:
                     .first()
                 )
                 if row is None:
-                    row = FactFinancialQuarterly(asset_id=asset.asset_id, fiscal_year=resolved_year, fiscal_quarter=4)
+                    row = FactFinancialQuarterly(
+                        asset_id=asset.asset_id,
+                        fiscal_year=resolved_year,
+                        fiscal_quarter=4,
+                        knowledge_date=knowledge_date,
+                    )
                     db.add(row)
                 row.bps = bps
                 row.source = "dart"

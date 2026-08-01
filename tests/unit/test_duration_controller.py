@@ -12,7 +12,6 @@ from app.computation.fixed_income.duration_controller import (
     _index_weight_split,
     _q_hat_sensitivity_rows,
     _trailing_month_ends,
-    _trailing_month_labels,
     build_metroguard_context,
     compute_carry_price_gate,
     compute_target_duration,
@@ -112,13 +111,6 @@ def test_q_hat_sensitivity_non_positive_q_hat_always_gives_zero_warning():
         assert row[1] == "0.000"
 
 
-def test_trailing_month_labels_ends_on_as_of_month():
-    labels = _trailing_month_labels(date(2026, 7, 30), 12)
-    assert len(labels) == 12
-    assert labels[-1] == "2026-07"
-    assert labels == sorted(labels)
-
-
 def test_build_metroguard_context_smoke():
     db = SessionLocal()
     try:
@@ -133,8 +125,8 @@ def test_build_metroguard_context_smoke():
         "formula_cards",
         "workflow_steps",
         "checklist_items",
-        "backtest_chart_uri",
-        "backtest_table_rows",
+        "performance_pending_title",
+        "gips_requirements",
         "sensitivity_rows",
         "warning_function_chart_uri",
         "historical_g_chart_uri",
@@ -143,5 +135,5 @@ def test_build_metroguard_context_smoke():
     ):
         assert key in context, f"{key} 누락"
 
-    for uri_key in ("backtest_chart_uri", "warning_function_chart_uri", "historical_g_chart_uri"):
+    for uri_key in ("warning_function_chart_uri", "historical_g_chart_uri"):
         assert context[uri_key].startswith("data:image/png;base64,")

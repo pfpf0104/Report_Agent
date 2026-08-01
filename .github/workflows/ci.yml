@@ -1,0 +1,99 @@
+name: CI
+
+# 이 프로젝트는 통합 테스트가 실제 PostgreSQL에 쓴다(SQLite로 대체 불가 —
+# RANGE 파티션과 JSONB를 쓴다). 그래서 서비스 컨테이너로 Postgres를 띄운 뒤
+# alembic 마이그레이션을 실제로 돌리고 테스트한다. 마이그레이션이 깨지면
+# 테스트 이전 단계에서 잡힌다.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: report_agent
+          POSTGRES_PASSWORD: report_agent
+          POSTGRES_DB: report_agent
+        ports:
+          - 5432:5432
+        # 헬스체크 없이 바로 접속하면 컨테이너가 아직 준비되지 않아 간헐 실패한다.
+        options: >-
+          --health-cmd "pg_isready -U report_agent"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      REPORT_AGENT_DATABASE_URL: postgresql+psycopg2://report_agent:report_agent@localhost:5432/report_agent
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      # WeasyPrint는 GTK 네이티브 라이브러리에 의존한다(README의 Windows 안내 참고).
+      # PDF 렌더링 경로를 CI에서도 검증하려면 이 패키지들이 필요하다.
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz-subset0 \
+            libcairo2 libgdk-pixbuf-2.0-0 fonts-noto-cjk
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run migrations
+        run: python -m alembic upgrade head
+
+      - name: Verify migration is reversible
+        # downgrade가 깨진 마이그레이션은 롤백이 필요한 순간에야 발견된다.
+        # knowledge_date 마이그레이션은 파티션 자식 테이블까지 건드리므로 특히 확인한다.
+        run: |
+          python -m alembic downgrade -1
+          python -m alembic upgrade head
+
+      - name: Compile check
+        run: python -m compileall app
+
+      - name: Run tests
+        run: python -m pytest tests -q
+
+      - name: Verify reports still render end-to-end
+        # 테스트는 context 빌더까지만 확인한다. 템플릿 문법 오류나 누락된 context
+        # 키는 실제 렌더링을 해봐야 잡힌다.
+        run: |
+          python - <<'PY'
+          from datetime import date
+          from app.db.base import SessionLocal
+          from app.computation.quant.ridge_sector_rank import build_callrank_context
+          from app.computation.fixed_income.duration_controller import build_metroguard_context
+          from app.computation.valuation.residual_income_model import build_valuation_context
+          from app.rendering.pdf_service import render_report_pdf
+
+          db = SessionLocal()
+          targets = [
+              ("callrank/report.html", build_callrank_context),
+              ("metroguard/report.html", build_metroguard_context),
+              ("valuation/report.html", build_valuation_context),
+          ]
+          for template, builder in targets:
+              pdf = render_report_pdf(template, builder(db, date(2026, 7, 30)))
+              size = len(pdf.getvalue())
+              assert size > 10_000, f"{template} 렌더링 결과가 비정상적으로 작다: {size} bytes"
+              print(f"  {template}: {size:,} bytes OK")
+          db.close()
+          PY

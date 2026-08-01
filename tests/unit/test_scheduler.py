@@ -12,12 +12,41 @@ def test_create_scheduler_registers_all_ingestion_jobs_except_unimplemented():
         "app.ingestion.jobs.ingest_macro_rates",
         "app.ingestion.jobs.ingest_equity_prices",
         "app.ingestion.jobs.ingest_korean_equity_prices",
+        "app.ingestion.jobs.ingest_financial_statements",
     }
     # 부동산 실거래 job은 NotImplementedError를 던지는 스텁이라 스케줄에서 제외된다.
     assert "app.ingestion.jobs.ingest_real_estate_deals" not in job_ids
 
 
-def test_create_scheduler_uses_daily_cron_in_kst():
+def test_financial_statements_is_scheduled_weekly_not_daily():
+    """회귀 테스트: 이 job이 스케줄러에 아예 빠져 있어 DART BPS가 자동 적재되지
+    않던 버그가 있었다(밸류에이션 리포트가 운영 중 항상 폴백 경로로 떨어짐).
+    사업보고서는 연 1회 공시라 일간이 아니라 주간이어야 한다."""
+    scheduler = create_scheduler()
+    job = scheduler.get_job("app.ingestion.jobs.ingest_financial_statements")
+
+    assert job is not None
+    fields = {f.name: str(f) for f in job.trigger.fields}
+    assert fields["day_of_week"] == "mon"
+    assert fields["hour"] == "7"
+    # 일간 job(07:30)과 겹치지 않게 어긋나 있어야 한다
+    assert fields["minute"] == "40"
+
+
+def test_daily_jobs_run_every_day_at_0730():
+    scheduler = create_scheduler()
+    for job_id in (
+        "app.ingestion.jobs.ingest_macro_rates",
+        "app.ingestion.jobs.ingest_equity_prices",
+        "app.ingestion.jobs.ingest_korean_equity_prices",
+    ):
+        fields = {f.name: str(f) for f in scheduler.get_job(job_id).trigger.fields}
+        assert fields["day_of_week"] == "*"
+        assert fields["hour"] == "7"
+        assert fields["minute"] == "30"
+
+
+def test_create_scheduler_uses_cron_in_kst():
     scheduler = create_scheduler()
     for job in scheduler.get_jobs():
         assert isinstance(job.trigger, CronTrigger)

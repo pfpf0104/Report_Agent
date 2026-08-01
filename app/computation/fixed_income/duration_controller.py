@@ -33,6 +33,7 @@ import numpy as np
 from sqlalchemy.orm import Session
 
 from app.computation.fixed_income.city_ai_stub import synthetic_city_ai_output
+from app.computation.performance_disclosure import build_performance_pending_context
 
 D_LONG_YEARS = 3.0
 D_SHORT_YEARS = 1.0
@@ -210,8 +211,7 @@ def build_metroguard_context(db: Session, as_of: date) -> dict:
         "formula_cards": FORMULA_CARDS,
         "workflow_steps": WORKFLOW_STEPS,
         "checklist_items": CHECKLIST_ITEMS,
-        "backtest_chart_uri": _build_backtest_chart(as_of),
-        "backtest_table_rows": _build_backtest_table(as_of),
+        **build_performance_pending_context(),
         "sensitivity_rows": sensitivity_rows,
         "warning_function_chart_uri": _warning_function_chart(),
         "historical_g_chart_uri": _historical_g_chart(as_of),
@@ -325,58 +325,3 @@ CHECKLIST_ITEMS = [
     "비용·추적 확인 — 만기별 편도 0.5~1bp와 다음 종가 듀레이션 오차를 검사한다.",
     "정본 승격 — 49번째 미확정 결과는 성숙 후에만 평가하고 새 forward 결과와 구분한다.",
 ]
-
-
-def _build_backtest_table(as_of: date) -> list[list[str]]:
-    rng = np.random.default_rng(as_of.toordinal() + 1)
-    years = list(range(as_of.year - 5, as_of.year + 1))
-    rows = []
-    cum = {"MetroGuard-KR": 100.0, "D3 중립": 100.0, "공식 벤치마크": 100.0}
-    for year in years:
-        mg = rng.normal(2.2, 3.0)
-        d3 = mg - rng.normal(0.5, 0.8)
-        bench = d3 - rng.normal(0.3, 1.0)
-        for key, val in (("MetroGuard-KR", mg), ("D3 중립", d3), ("공식 벤치마크", bench)):
-            cum[key] *= 1 + val / 100
-        rows.append([str(year), f"{mg:+.2f}%", f"{d3:+.2f}%", f"{bench:+.2f}%", f"{mg - bench:+.2f}%p"])
-    return rows
-
-
-def _trailing_month_labels(as_of: date, n: int) -> list[str]:
-    """as_of가 속한 달을 마지막 라벨로 하는 n개월치 "YYYY-MM" 라벨(오름차순)."""
-    labels = []
-    year, month = as_of.year, as_of.month
-    for _ in range(n):
-        labels.append(f"{year}-{month:02d}")
-        month -= 1
-        if month == 0:
-            month = 12
-            year -= 1
-    return list(reversed(labels))
-
-
-def _build_backtest_chart(as_of: date) -> str:
-    """MetroGuard-KR vs D3 중립 vs 공식 벤치마크 누적 부의 경로 예시(합성 데이터).
-
-    실제 5년 시뮬레이션 엔진이 없어, 첨부 보고서 4페이지의 형태(MetroGuard-KR
-    > D3 중립 > 공식 벤치마크, 완만한 우상향)만 재현하는 자리표시 차트다.
-    라벨은 as_of를 마지막 달로 고정한다 — 이전에는 연도를 하드코딩해 as_of가
-    바뀌어도 차트가 항상 2021-01~2023-06을 표시해 같은 페이지의 연도별 표(연
-    2021~as_of.year)와 어긋났다.
-    """
-    from app.rendering.chart_service import line_chart
-
-    rng = np.random.default_rng(as_of.toordinal() + 2)
-    n = 30
-    x_labels = _trailing_month_labels(as_of, n)
-
-    def _walk(drift: float, vol: float) -> list[float]:
-        steps = rng.normal(drift, vol, size=n)
-        return list(100 * np.cumprod(1 + steps))
-
-    series = {
-        "MetroGuard-KR": _walk(0.0045, 0.012),
-        "D3 중립": _walk(0.0035, 0.011),
-        "공식 벤치마크": _walk(0.0028, 0.011),
-    }
-    return line_chart(x_labels, series, figsize=(6.2, 2.4))
