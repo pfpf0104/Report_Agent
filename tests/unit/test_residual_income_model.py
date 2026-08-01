@@ -7,7 +7,11 @@ from app.computation.valuation.residual_income_model import (
     SAMSUNG_SCENARIOS,
     SK_HYNIX_BOOK_VALUE,
     SK_HYNIX_SCENARIOS,
+    RimScenario,
+    _rim_value_breakdown,
     build_valuation_context,
+    compute_rim_value,
+    cost_of_equity_sensitivity,
     probability_weighted_value,
 )
 from app.db.base import SessionLocal
@@ -61,3 +65,58 @@ def test_build_valuation_context_prefers_real_kis_price(db):
     samsung_card = context["cards"][0]
     assert "220,000원" in samsung_card["caption"]
     assert "KIS 실시간 시세" in samsung_card["caption"]
+
+
+def test_rim_value_breakdown_components_sum_to_compute_rim_value():
+    """가치 구성 페이지가 쓰는 breakdown이 기존 compute_rim_value 스칼라 API와
+    같은 계산 경로를 공유하는지(리팩터링으로 값이 갈라지지 않았는지) 확인한다."""
+    scenario = SAMSUNG_SCENARIOS[1]  # 점진적 추격
+    breakdown = _rim_value_breakdown(SAMSUNG_BOOK_VALUE, scenario)
+    assert breakdown["book_value"] + breakdown["pv_excess_income"] + breakdown["pv_terminal_value"] == pytest.approx(
+        breakdown["total"]
+    )
+    assert breakdown["total"] == pytest.approx(compute_rim_value(SAMSUNG_BOOK_VALUE, scenario))
+
+
+def test_cost_of_equity_sensitivity_zero_delta_matches_base_value():
+    scenario = SAMSUNG_SCENARIOS[1]
+    rows = cost_of_equity_sensitivity(SAMSUNG_BOOK_VALUE, scenario, deltas_pct_pt=(0.0,))
+    assert rows[0]["change_pct"] == pytest.approx(0.0)
+    assert rows[0]["value"] == pytest.approx(compute_rim_value(SAMSUNG_BOOK_VALUE, scenario))
+
+
+def test_cost_of_equity_sensitivity_is_monotonically_decreasing_in_r():
+    """자기자본비용이 높을수록 초과이익 할인폭이 커져 적정가는 낮아져야 한다."""
+    scenario = SAMSUNG_SCENARIOS[1]
+    rows = cost_of_equity_sensitivity(SAMSUNG_BOOK_VALUE, scenario, deltas_pct_pt=(-1.0, -0.5, 0.0, 0.5, 1.0))
+    values = [r["value"] for r in rows]
+    assert values == sorted(values, reverse=True)
+
+
+def test_rim_value_breakdown_terminal_value_undefined_when_r_equals_g():
+    """r=g이면 (r-g)=0으로 나눠 잔여가치가 무한대/오류가 나야 정상이다 —
+    CHECKLIST_ITEMS의 'r>g 성립 확인' 항목이 실제로 왜 필요한지 보여주는 경계 테스트."""
+    degenerate = RimScenario(
+        name="degenerate", weight=1.0, roe_path=(10, 10, 10, 10, 10), payout_path=(50, 50, 50, 50, 50),
+        cost_of_equity=10.0, terminal_roe=10.0, terminal_growth=10.0,
+    )
+    with pytest.raises(ZeroDivisionError):
+        _rim_value_breakdown(100.0, degenerate)
+
+
+def test_build_valuation_context_includes_new_pages_data():
+    db = SessionLocal()
+    try:
+        context = build_valuation_context(db, date(2026, 7, 30))
+    finally:
+        db.close()
+
+    for key in ("cycle_scenario_cards", "value_composition_rows", "pbr_rows", "weight_donut_chart_uri"):
+        assert key in context, f"{key} 누락"
+
+    assert len(context["value_composition_rows"]) == 2
+    assert len(context["pbr_rows"]) == 2
+    for company_key in ("samsung", "hynix"):
+        company = context[company_key]
+        assert company["roe_chart_uri"].startswith("data:image/png;base64,")
+        assert len(company["risk_cards"]) == 3
