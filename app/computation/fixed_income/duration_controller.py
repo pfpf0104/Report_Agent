@@ -213,6 +213,8 @@ def build_metroguard_context(db: Session, as_of: date) -> dict:
         "backtest_chart_uri": _build_backtest_chart(as_of),
         "backtest_table_rows": _build_backtest_table(as_of),
         "sensitivity_rows": sensitivity_rows,
+        "warning_function_chart_uri": _warning_function_chart(),
+        "historical_g_chart_uri": _historical_g_chart(as_of),
         "glossary_cards": GLOSSARY_CARDS,
         "source": "MetroGuard-KR · 월말 운용·연구 보고서 (City AI 입력은 합성 데이터)",
     }
@@ -235,6 +237,37 @@ def _q_hat_sensitivity_rows(
         d_star = D_LONG_YEARS - (D_LONG_YEARS - D_SHORT_YEARS) * float(np.mean(combined_g))
         rows.append([f"{delta:+.0f}bp", f"{g:.3f}", f"{d_star:.2f}년"])
     return rows
+
+
+def _warning_function_chart() -> str:
+    """g = mean_s[tanh(A⁻/s)]의 실제 모양을 A⁻ 0~100bp 구간에서 그린다(합성 아님,
+    compute_warning을 그대로 호출). q̂=1bp(양수)로 고정해 부호 게이트만 통과시킨다.
+    """
+    from app.rendering.chart_service import line_chart
+
+    a_minus_range = list(range(0, 105, 5))
+    x_labels = [f"{a}" for a in a_minus_range]
+    g_values = [compute_warning(CarryPriceGate(1.0, 0.0, float(a))) for a in a_minus_range]
+    return line_chart(x_labels, {"g (경고 강도)": g_values}, figsize=(6.2, 2.2), max_x_ticks=6)
+
+
+def _historical_g_chart(as_of: date, months: int = 12) -> str:
+    """운용에 쓰이는 활성 lot 원장(최근 4개월)보다 긴 12개월 g 추이를 참고용으로
+    그린다. 같은 실제 함수(compute_carry_price_gate/compute_warning)를 더 긴
+    구간에 적용한 것으로, lot 활성 여부 판정과는 별개다.
+    """
+    from app.rendering.chart_service import line_chart
+
+    origins = _trailing_month_ends(as_of, count=months)
+    g_values = []
+    for origin in origins:
+        city_ai = synthetic_city_ai_output(origin)
+        gate = compute_carry_price_gate(
+            city_ai["predicted_change_bp"], city_ai["yield_3y_bp"], city_ai["yield_1y_bp"]
+        )
+        g_values.append(compute_warning(gate))
+    x_labels = [o.strftime("%Y-%m") for o in origins]
+    return line_chart(x_labels, {"g (경고 강도)": g_values}, figsize=(6.2, 2.2), max_x_ticks=6)
 
 
 GLOSSARY_CARDS = [

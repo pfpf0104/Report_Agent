@@ -168,6 +168,26 @@
   <div class="top-bar"></div>
   <div class="page-body">
     {{ report_header(
+      "WARNING FUNCTION",
+      "경고 함수의 모양과 12개월 추이",
+      "고정 규칙 tanh 경고가 A⁻에 어떻게 반응하는지, 실제 함수를 그대로 그린 곡선이다.",
+      ["학습되는 threshold 없음 — 4개 tanh 척도 평균"]
+    ) }}
+
+    <div style="font-weight:700; font-size:9.5px; color:#1f2933;">g = mean_s[tanh(A⁻/s)], s ∈ {2.5, 5, 10, 20}bp</div>
+    <img src="{{ warning_function_chart_uri }}" style="width:100%; margin-top:4px;">
+    <div class="chart-caption">A⁻=27.5bp에서 g≈0.968 (지면 예시와 일치) — 완만한 A⁻에도 경고 강도가 빠르게 포화된다.</div>
+
+    <div style="margin-top:16px; font-weight:700; font-size:9.5px; color:#1f2933;">최근 12개월 g 추이 (참고용 — 활성 lot 원장은 최근 4개월만 사용)</div>
+    <img src="{{ historical_g_chart_uri }}" style="width:100%; margin-top:4px;">
+  </div>
+  {{ report_footer("City AI 입력은 합성 데이터, gate/경고 계산은 실제 함수") }}
+</div>
+
+<div class="page">
+  <div class="top-bar"></div>
+  <div class="page-body">
+    {{ report_header(
       "GLOSSARY",
       "정의와 표기",
       "본 보고서에서 반복되는 기호와 용어를 한 곳에 모은다.",
