@@ -45,8 +45,8 @@ class RimScenario:
     terminal_growth: float  # 정상상태 장기 g, %
 
 
-def compute_rim_value(book_value_0: float, scenario: RimScenario) -> float:
-    """5년 명시적 예측 + Gordon growth terminal value로 기업가치를 계산한다."""
+def _rim_value_breakdown(book_value_0: float, scenario: RimScenario) -> dict:
+    """기업가치를 장부가치/PV(5년 초과이익)/PV(잔여가치)로 분해한다."""
     r = scenario.cost_of_equity / 100
     bv = book_value_0
     pv_sum = 0.0
@@ -63,7 +63,17 @@ def compute_rim_value(book_value_0: float, scenario: RimScenario) -> float:
     terminal_value = terminal_excess / (r - g)
     pv_terminal = terminal_value / (1 + r) ** len(scenario.roe_path)
 
-    return book_value_0 + pv_sum + pv_terminal
+    return {
+        "book_value": book_value_0,
+        "pv_excess_income": pv_sum,
+        "pv_terminal_value": pv_terminal,
+        "total": book_value_0 + pv_sum + pv_terminal,
+    }
+
+
+def compute_rim_value(book_value_0: float, scenario: RimScenario) -> float:
+    """5년 명시적 예측 + Gordon growth terminal value로 기업가치를 계산한다."""
+    return _rim_value_breakdown(book_value_0, scenario)["total"]
 
 
 def probability_weighted_value(book_value_0: float, scenarios: list[RimScenario]) -> dict:
@@ -267,6 +277,38 @@ def _resolve_current_price(db: Session, name: str) -> tuple[float, str]:
     return CURRENT_PRICE_FALLBACK[name], "보고서 고정값(KIS 데이터 없음)"
 
 
+def _value_composition_row(company: dict) -> list[str]:
+    """기준 시나리오 적정가를 장부가치/PV(초과이익)/PV(잔여가치)로 분해해 보여준다.
+
+    잔여가치 비중이 클수록 5년 이후 정상상태 가정(terminal_roe, g)에 대한
+    의존도가 높다는 뜻이라 — 표준적인 DCF/RIM 리스크 점검 항목이다.
+    """
+    b = _rim_value_breakdown(company["book_value"], company["base_scenario"])
+    terminal_share = b["pv_terminal_value"] / b["total"] * 100
+    return [
+        company["name"],
+        company["base_scenario"].name,
+        f"{b['book_value']:,.0f}원",
+        f"{b['pv_excess_income']:,.0f}원",
+        f"{b['pv_terminal_value']:,.0f}원",
+        f"{b['total']:,.0f}원",
+        f"{terminal_share:.0f}%",
+    ]
+
+
+def _pbr_cross_check_row(company: dict) -> list[str]:
+    """RIM은 배수를 쓰지 않지만, 결과를 PBR로 환산해 시장이 통상 참조하는 배수와
+    비교하는 사후 크로스체크 표를 제공한다(밸류에이션의 근거가 아니라 검증용)."""
+    current_pbr = company["current_price"] / company["book_value"]
+    fair_pbr = company["fair_value"] / company["book_value"]
+    return [
+        company["name"],
+        f"{company['book_value']:,.0f}원",
+        f"{current_pbr:.2f}x",
+        f"{fair_pbr:.2f}x",
+    ]
+
+
 def _company_row(db: Session, name: str, book_value: float, scenarios: list[RimScenario]) -> dict:
     result = probability_weighted_value(book_value, scenarios)
     current, price_source = _resolve_current_price(db, name)
@@ -391,5 +433,7 @@ def build_valuation_context(db: Session, as_of: date) -> dict:
         },
         "weight_donut_chart_uri": _weight_donut_chart(SAMSUNG_SCENARIOS),
         "assumption_rows": _assumption_rows(samsung, SAMSUNG_SCENARIOS) + _assumption_rows(hynix, SK_HYNIX_SCENARIOS),
+        "value_composition_rows": [_value_composition_row(samsung), _value_composition_row(hynix)],
+        "pbr_rows": [_pbr_cross_check_row(samsung), _pbr_cross_check_row(hynix)],
         "source": "독립 투자분석 보고서 (분석 기준 BPS는 보고서 고정값, DART 연동 전)",
     }

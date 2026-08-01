@@ -221,6 +221,48 @@
   <div class="top-bar"></div>
   <div class="page-body">
     {{ report_header(
+      "VALUE COMPOSITION",
+      "적정가는 어디서 오는가",
+      "기준 시나리오 적정가를 장부가치, 5년 명시적 초과이익, 잔여가치(terminal value)로 분해한다.",
+      ["잔여가치 비중이 클수록 5년 이후 정상상태 가정에 대한 의존도가 높다"]
+    ) }}
+
+    <table class="data-table">
+      <thead>
+        <tr><th>기업</th><th>기준 시나리오</th><th>장부가치</th><th>PV(5년 초과이익)</th><th>PV(잔여가치)</th><th>합계</th><th>잔여가치 비중</th></tr>
+      </thead>
+      <tbody>
+        {% for row in value_composition_rows %}
+        <tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <div style="margin-top:18px; font-weight:700; font-size:9.5px; color:#1f2933;">PBR 크로스체크 (밸류에이션 근거가 아니라 사후 검증용)</div>
+    <table class="data-table">
+      <thead>
+        <tr><th>기업</th><th>장부가치(BPS)</th><th>현재가 PBR</th><th>적정가 PBR</th></tr>
+      </thead>
+      <tbody>
+        {% for row in pbr_rows %}
+        <tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    {{ callout_box(
+      "info",
+      "왜 PBR을 참조만 하는가",
+      "RIM은 PBR을 가정하지 않고 ROE·자기자본비용만으로 적정가를 역산한다. 이 표는 결과를 사후적으로 시장이 흔히 쓰는 배수로 환산해 직관적으로 검증하는 용도일 뿐, 밸류에이션의 근거가 아니다."
+    ) }}
+  </div>
+  {{ report_footer("가치 구성 분해는 기준 시나리오(최대 가중치) 기준") }}
+</div>
+
+<div class="page">
+  <div class="top-bar"></div>
+  <div class="page-body">
+    {{ report_header(
       "KEY RISKS",
       "핵심 리스크",
       "이미 계산된 시나리오 확률·민감도 수치를 근거로 리스크를 정리한다 — 별도 서술이 아니다.",
