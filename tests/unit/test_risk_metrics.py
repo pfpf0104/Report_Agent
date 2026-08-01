@@ -144,6 +144,28 @@ def test_max_drawdown_empty_series():
     assert max_drawdown([]).max_drawdown == 0.0
 
 
+def test_max_drawdown_counts_the_starting_capital_as_a_peak():
+    """시작하자마자 하락하는 구간의 낙폭 회귀 테스트.
+
+    1.0 → 0.9 → 0.81 이므로 -19%다. 부의 경로에서 기초 1.0을 빼면 첫 고점이
+    0.9가 돼 -10%로 절반 가까이 과소평가된다(롤링 낙폭 테스트에서 잡힌 오류).
+    """
+    result = max_drawdown([-0.10, -0.10])
+    assert result.max_drawdown == pytest.approx(-0.19)
+    assert result.peak_index == -1  # 고점 = 기초 자본
+    assert result.trough_index == 1
+    assert result.recovery_index is None
+
+
+def test_max_drawdown_indices_point_into_the_returns_array():
+    # 부의 경로: 1.0 → 1.2 → 0.9 → 1.25 (returns 인덱스 0,1,2)
+    r = returns_from_prices([1.0, 1.2, 0.9, 1.25])
+    result = max_drawdown(r)
+    assert result.peak_index == 0  # +20%를 만든 수익률
+    assert result.trough_index == 1  # -25%를 만든 수익률
+    assert result.recovery_index == 2
+
+
 def test_calmar_is_none_without_drawdown():
     assert calmar_ratio([0.01, 0.01], periods_per_year=12) is None
 

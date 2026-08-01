@@ -133,13 +133,21 @@ def sortino_ratio(
 @dataclass(frozen=True)
 class DrawdownResult:
     max_drawdown: float  # 음수 (예: -0.23 = -23%)
-    peak_index: int
+    peak_index: int  # returns 기준 인덱스. -1이면 고점이 **기초**(투자 시작 시점)
     trough_index: int
     recovery_index: int | None  # 고점 회복 시점. 미회복이면 None
 
 
 def max_drawdown(returns) -> DrawdownResult:
     """최대낙폭 — 고점 대비 최대 하락률과 그 구간.
+
+    부의 경로에 **기초 자본 1.0을 포함**한다. 이걸 빼면 시작하자마자 하락하는
+    구간의 낙폭이 실제보다 얕게 나온다: [-10%, -10%]는 1.0 → 0.81이므로 -19%가
+    맞는데, cumprod만 쓰면 첫 고점이 0.9가 돼 -10%로 계산된다(롤링 낙폭 테스트에서
+    실제로 잡힌 오류다). 기관 성과표의 MDD는 투자 시작 시점을 고점 후보로 본다.
+
+    peak_index가 -1이면 고점이 기초 자본이라는 뜻이다 — 즉 관측 구간 안에서
+    단 한 번도 원금을 넘긴 적이 없다.
 
     recovery_index는 낙폭 이후 **직전 고점을 회복한** 첫 시점이다. 관측 구간
     안에서 회복하지 못했으면 None — 이 구분이 중요하다. 회복 여부를 표시하지
@@ -149,7 +157,8 @@ def max_drawdown(returns) -> DrawdownResult:
     if len(r) == 0:
         return DrawdownResult(0.0, 0, 0, None)
 
-    wealth = np.cumprod(1.0 + r)
+    # index 0 = 기초(수익률 반영 전). 이후 인덱스는 returns 인덱스 + 1.
+    wealth = np.concatenate([[1.0], np.cumprod(1.0 + r)])
     running_peak = np.maximum.accumulate(wealth)
     drawdowns = wealth / running_peak - 1.0
 
@@ -165,9 +174,9 @@ def max_drawdown(returns) -> DrawdownResult:
     recovery = None
     after = np.nonzero(wealth[trough + 1 :] >= peak_value)[0]
     if len(after) > 0:
-        recovery = int(trough + 1 + after[0])
+        recovery = int(trough + 1 + after[0]) - 1
 
-    return DrawdownResult(mdd, peak, trough, recovery)
+    return DrawdownResult(mdd, peak - 1, trough - 1, recovery)
 
 
 def calmar_ratio(returns, periods_per_year: int = TRADING_DAYS_PER_YEAR) -> float | None:
