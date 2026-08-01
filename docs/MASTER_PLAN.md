@@ -112,19 +112,19 @@ Bridgewater 수준과의 격차는 "페이지가 부족해서"도 "차트가 못
 
 | 작업 | 산출물 | 완료 기준 |
 |---|---|---|
-| 0-1 | 인제스천 잡 프로덕션 최초 실행 | 5개 테이블 전부 non-zero, `ingestion_run` 전건 success |
-| 0-2 | 시계열 히스토리 백필 (최소 5년) | GIPS 5년 요건 충족. FRED/BOK/KIS 과거분 |
-| 0-3 | **Point-in-time 스키마 도입** | 모든 fact 테이블에 `knowledge_date`(정보 취득시점) 추가, 조회 시 `as_of` 기준 필터 강제 |
-| 0-4 | 하드코딩 성과 제거 | `BACKTEST_SUMMARY` 삭제 → 실제 계산 결과로 대체하거나 섹션 자체 제거 |
-| ~~0-5~~ | ~~데이터 품질 게이트~~ | **완료** — `app/ingestion/quality.py` + `GET /ingestion/quality`. 데이터 유무·스테일·상식범위(단위 오류)·이상치·영업일 결측 검사 |
+| ~~0-1~~ | ~~인제스천 잡 프로덕션 최초 실행~~ | **완료** — 로컬 세션에서 4개 job(macro_rates/equity_prices/korean_equity_prices/financial_statements) 실제 API로 실행, `ingestion_run` 전건 success. FMP 402 차단(XLE) 발견 후 Yahoo Finance로 교체, BOK 국고채 %→bp 단위 정규화(G13) 실측 확인 |
+| ~~0-2~~ | ~~시계열 히스토리 백필 (최소 5년)~~ | **완료** — KTB1Y/KTB3Y(2022-01~, 4.6년), XLE/SPY/005930/000660(2021-08~, 5.0년), DART BPS 5개 사업연도. `backfill_*` job 4개, `ingestion_router.py`에 수동 트리거로 등록(재해복구/재실행용) |
+| ~~0-3~~ | ~~Point-in-time 스키마 도입~~ | **완료** — 원격 세션이 `knowledge_date` 컬럼·마이그레이션·`point_in_time.py` 구현. 로컬 세션이 DART는 rcept_no(접수번호) 파싱으로 회계연도말+90일 근사 대신 실제 공시일을 쓰도록 개선 |
+| ~~0-4~~ | ~~하드코딩 성과 제거~~ | **완료** — 원격 세션에서 `BACKTEST_SUMMARY` 등 조작된 수치 제거 |
+| ~~0-5~~ | ~~데이터 품질 게이트~~ | **완료** — `app/ingestion/quality.py` + `GET /ingestion/quality`. 데이터 유무·스테일·상식범위(단위 오류)·이상치·영업일 결측 검사. 실 DB `ok=true` 확인 |
 
-> **0-3이 이 프로젝트의 진짜 분기점이다.** 지금 리포트 본문은 "7일 embargo",
-> "정보 동결" 같은 기관급 규율을 주장하는데 스키마가 이를 강제하지 못한다.
-> `knowledge_date` 없이는 look-ahead bias를 구조적으로 막을 수 없고,
-> look-ahead가 있는 백테스트는 기관 심사를 통과할 수 없다.
-
-**Phase 0 완료 없이 Phase 1 이후를 진행하면 안 된다** — 가짜 데이터 위에 정교한
-리스크 엔진을 얹어봐야 정교한 가짜가 될 뿐이다.
+**Phase 0 완료.** 실측 검증: `dim_asset` 6개, `fact_market_daily` 8,570+행,
+`fact_financial_quarterly` 10행, 전부 `knowledge_date` 채워짐, 품질 게이트
+통과. 전 자산 GIPS 5년 요건 충족(KTB1Y/KTB3Y 2021-01-04~, XLE/SPY/005930/
+000660 2021-08-02~). 코드 리뷰 중 `backfill_macro_rates.py`의 연도 범위 계산에
+off-by-one 버그를 발견해 수정 — BOK API 자체는 2020년 이전 데이터도 정상
+반환하는데, `range(year-N+1, year+1)` 계산식이 5년 전 연도를 통째로 빠뜨리고
+있었다(다른 백필 job들의 `range(year-N, year+1)`과 어긋남).
 
 ---
 
@@ -224,16 +224,21 @@ Bridgewater 수준과의 격차는 "페이지가 부족해서"도 "차트가 못
 
 ---
 
-## 4. 즉시 착수 가능한 다음 3개 작업
+## 4. 즉시 착수 가능한 다음 작업 (Phase 0 완료 후 갱신)
 
-0. **`financial_statements`를 스케줄러에 등록** — 한 줄. G12 해소. 이걸 안 하면
-   DART BPS 연동이 운영에서 죽은 코드로 남는다. (Phase 0, 5분)
-1. **`knowledge_date` 스키마 마이그레이션** — 모든 fact 테이블에 정보취득시점 컬럼
-   추가 + 조회 계층에 `as_of` 필터 강제. (Phase 0-3, 다른 모든 것의 전제조건)
-2. **하드코딩 성과 제거** — `BACKTEST_SUMMARY` 3개 값을 실제 계산으로 대체하거나
-   제거. (Phase 0-4, 컴플라이언스 리스크 해소)
-3. **CI 파이프라인** — 92개 테스트 자동화. (Phase 5-1, 이번 세션에서 발견한
-   버그 유형이 조용히 재발하는 것 방지)
+Phase 0(0-1~0-5)이 전부 끝났고 전 자산 GIPS 5년 요건도 충족한다. 다음 우선순위:
+
+1. **Phase 1-1 백테스트 엔진** — `backtest/engine.py`. 워크포워드, 거래비용,
+   슬리피지, 리밸런싱. Phase 1의 나머지(1-2~1-4)는 이미 순수 함수로 완료돼
+   있으나 실제 시계열에 아직 안 붙어 있음.
+2. **Phase 1-5 롤링 분석** — 12M 롤링 Sharpe/변동성/상관계수 차트. 리포트
+   반영까지 포함해야 "성과·리스크 페이지가 실제 계산 결과"라는 Phase 1
+   완료 기준이 충족된다.
+3. **모니터링·알림 (Phase 5-3)** — 인제스천 실패, 데이터 스테일, 이상치
+   감지. 지금은 `GET /ingestion/quality`를 사람이 수동으로 조회해야 안다.
+
+완료된 항목(재작업 불필요): 0-1~0-5 전부, 1-2~1-4(순수 함수), 2-1~2-5,
+5-1(CI), 5-2(스케줄러, financial_statements 포함).
 
 ---
 

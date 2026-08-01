@@ -75,12 +75,25 @@ async def _fetch_all_years(codes: dict[str, str], years: list[int]) -> dict[str,
         return results
 
 
+def _backfill_year_range(today: date, backfill_years: int = BACKFILL_YEARS) -> list[int]:
+    """backfill_financial_statements.py와 동일하게 range(today.year - N,
+    today.year + 1)로 계산해야 5개 온전한 연도(작년 포함)를 다 커버한다.
+
+    이전에는 "+1"이 붙어 있어(range(year-N+1, year+1)) 5년 전 연도가 통째로
+    빠지고 아직 다 지나지 않은 올해가 대신 들어가 실질적으로 5년에 못 미치는
+    기간만 쌓였다 — 실제 DB에서 KTB1Y/KTB3Y가 5년 전이 아니라 4년 전부터만
+    시작하는 걸로 재현됨(BOK API 자체는 그 이전 데이터도 정상 반환하는 걸
+    확인했으므로 API 한계가 아니라 이 계산식의 버그였다).
+    """
+    return list(range(today.year - backfill_years, today.year + 1))
+
+
 def run() -> None:
     db = SessionLocal()
     try:
         with track_ingestion_run(db, "backfill_macro_rates") as ingestion:
             today = datetime.now(timezone.utc).date()
-            years = list(range(today.year - BACKFILL_YEARS + 1, today.year + 1))
+            years = _backfill_year_range(today)
             inserted_total = 0
 
             rows_by_code = asyncio.run(_fetch_all_years(MACRO_SERIES, years))

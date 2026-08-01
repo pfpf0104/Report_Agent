@@ -6,6 +6,10 @@ from sqlalchemy.orm import Session
 from app.db.base import get_db
 from app.ingestion.quality import run_quality_gate
 from app.ingestion.jobs import (
+    backfill_equity_prices,
+    backfill_financial_statements,
+    backfill_korean_equity_prices,
+    backfill_macro_rates,
     ingest_equity_prices,
     ingest_financial_statements,
     ingest_korean_equity_prices,
@@ -21,6 +25,13 @@ _JOBS = {
     "macro_rates": ingest_macro_rates.run,
     "financial_statements": ingest_financial_statements.run,
     "real_estate_deals": ingest_real_estate_deals.run,
+    # 5년 히스토리 백필(Phase 0-2). 매일 도는 스케줄러 대상이 아니라 일회성/
+    # 재해복구용이라 별도 job 이름으로 등록한다 — 전부 재개 가능(idempotent)해
+    # 여러 번 트리거해도 안전하다.
+    "backfill_macro_rates": backfill_macro_rates.run,
+    "backfill_equity_prices": backfill_equity_prices.run,
+    "backfill_korean_equity_prices": backfill_korean_equity_prices.run,
+    "backfill_financial_statements": backfill_financial_statements.run,
 }
 
 
