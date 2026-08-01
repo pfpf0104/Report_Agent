@@ -25,17 +25,24 @@ def _set_credentials(monkeypatch):
     kis_client._token_cache.clear()
 
 
-@pytest.fixture()
-def db():
-    session = SessionLocal()
-    codes = list(job.SYMBOLS.keys())
-    yield session
+def _cleanup(session, codes):
     session.query(FactMarketDaily).filter(FactMarketDaily.asset_id.in_(
         session.query(DimAsset.asset_id).filter(DimAsset.code.in_(codes))
     )).delete(synchronize_session=False)
     session.query(DimAsset).filter(DimAsset.code.in_(codes)).delete(synchronize_session=False)
     session.query(IngestionRun).filter_by(source="kis_korean_equity_prices").delete()
     session.commit()
+
+
+@pytest.fixture()
+def db():
+    session = SessionLocal()
+    codes = list(job.SYMBOLS.keys())
+    # 실제 운영 인제스천(Phase 0-1 등)이 같은 code로 dim_asset을 먼저 만들어뒀을 수
+    # 있다 — teardown뿐 아니라 setup에서도 정리해야 unique constraint 충돌이 없다.
+    _cleanup(session, codes)
+    yield session
+    _cleanup(session, codes)
     session.close()
 
 

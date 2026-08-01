@@ -22,10 +22,7 @@ from app.db.point_in_time import visible_as_of
 SAMSUNG = "005930"
 
 
-@pytest.fixture()
-def db():
-    session = SessionLocal()
-    yield session
+def _cleanup(session):
     session.query(FactMarketDaily).filter(FactMarketDaily.asset_id.in_(
         session.query(DimAsset.asset_id).filter(DimAsset.code == SAMSUNG)
     )).delete(synchronize_session=False)
@@ -34,6 +31,17 @@ def db():
     )).delete(synchronize_session=False)
     session.query(DimAsset).filter(DimAsset.code == SAMSUNG).delete(synchronize_session=False)
     session.commit()
+
+
+@pytest.fixture()
+def db():
+    session = SessionLocal()
+    # 실제 운영 인제스천(Phase 0-1 등)이 같은 code(005930)로 실데이터를 이미
+    # 적재했을 수 있다 — teardown뿐 아니라 setup에서도 정리해야 이 테스트가
+    # "삼성전자 fact 행이 정확히 1건"이라고 가정하는 assert들이 성립한다.
+    _cleanup(session)
+    yield session
+    _cleanup(session)
     session.close()
 
 

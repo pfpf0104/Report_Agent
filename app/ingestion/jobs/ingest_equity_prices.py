@@ -1,4 +1,9 @@
-"""FMP에서 ETF/주식 시세를 가져와 fact_market_daily에 적재하는 배치.
+"""Yahoo Finance에서 ETF/주식 시세를 가져와 fact_market_daily에 적재하는 배치.
+
+이전에는 FMP를 썼으나, FMP 무료 플랜이 XLE/QQQ 같은 일부 ETF를 402(구독 필요)로
+막아 CallRank가 실제로 쓰는 XLE 조회가 불가능해졌다(2026-08 실측). Yahoo Finance
+비공식 차트 API(무료, 키 불필요)로 교체했다 — app/ingestion/connectors/
+yahoo_finance_client.py 참고.
 
 TODO: SYMBOLS를 하드코딩 대신 dim_asset(asset_type='ETF' 등)에서 동적으로
 조회하도록 바꿔야 한다. 지금은 CallRank가 실제로 쓰는 두 개(XLE, SPY)만 다룬다.
@@ -14,7 +19,7 @@ from sqlalchemy.orm import Session
 from app.db.base import SessionLocal
 from app.db.models.dim_asset import AssetType, DimAsset
 from app.db.models.fact_market_daily import FactMarketDaily
-from app.ingestion.connectors.fmp_client import fetch_quote
+from app.ingestion.connectors.yahoo_finance_client import fetch_daily_history
 from app.ingestion.run_tracker import track_ingestion_run
 
 SYMBOLS = ["XLE", "SPY"]
@@ -22,7 +27,12 @@ SYMBOLS = ["XLE", "SPY"]
 
 async def _fetch_all_quotes(symbols: list[str]) -> dict[str, dict]:
     async with httpx.AsyncClient() as client:
-        return {symbol: await fetch_quote(client, symbol) for symbol in symbols}
+        results = {}
+        for symbol in symbols:
+            history = await fetch_daily_history(client, symbol, range_="5d")
+            if history:
+                results[symbol] = history[-1]  # 가장 최근 거래일
+        return results
 
 
 def _get_or_create_asset(db: Session, symbol: str) -> DimAsset:
@@ -44,18 +54,18 @@ def _upsert_quote(db: Session, asset: DimAsset, trade_date, quote: dict) -> None
         row = FactMarketDaily(asset_id=asset.asset_id, trade_date=trade_date, knowledge_date=trade_date)
         db.add(row)
     row.open = quote.get("open")
-    row.high = quote.get("dayHigh")
-    row.low = quote.get("dayLow")
-    row.close = quote.get("price")
-    row.adj_close = quote.get("price")
+    row.high = quote.get("high")
+    row.low = quote.get("low")
+    row.close = quote.get("close")
+    row.adj_close = quote.get("close")
     row.volume = quote.get("volume")
-    row.source = "fmp"
+    row.source = "yahoo_finance"
 
 
 def run() -> None:
     db = SessionLocal()
     try:
-        with track_ingestion_run(db, "fmp_equity_prices") as ingestion:
+        with track_ingestion_run(db, "yahoo_equity_prices") as ingestion:
             quotes = asyncio.run(_fetch_all_quotes(SYMBOLS))
             trade_date = datetime.now(timezone.utc).date()
 
@@ -64,6 +74,6 @@ def run() -> None:
                 _upsert_quote(db, asset, trade_date, quote)
 
             db.commit()
-            ingestion.raw_archive_path = "data/raw_archive/fmp"
+            ingestion.raw_archive_path = "data/raw_archive/yahoo_finance"
     finally:
         db.close()

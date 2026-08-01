@@ -17,17 +17,24 @@ def _set_api_key(monkeypatch):
     monkeypatch.setattr(bok_client.settings, "bok_api_key", "test-key")
 
 
-@pytest.fixture()
-def db():
-    session = SessionLocal()
-    codes = list(job.MACRO_SERIES.keys())
-    yield session
+def _cleanup(session, codes):
     session.query(FactMarketDaily).filter(FactMarketDaily.asset_id.in_(
         session.query(DimAsset.asset_id).filter(DimAsset.code.in_(codes))
     )).delete(synchronize_session=False)
     session.query(DimAsset).filter(DimAsset.code.in_(codes)).delete(synchronize_session=False)
     session.query(IngestionRun).filter_by(source="bok_macro_rates").delete()
     session.commit()
+
+
+@pytest.fixture()
+def db():
+    session = SessionLocal()
+    codes = list(job.MACRO_SERIES.keys())
+    # 실제 운영 인제스천(Phase 0-1 등)이 같은 code로 dim_asset을 먼저 만들어뒀을 수
+    # 있다 — teardown뿐 아니라 setup에서도 정리해야 unique constraint 충돌이 없다.
+    _cleanup(session, codes)
+    yield session
+    _cleanup(session, codes)
     session.close()
 
 
@@ -43,7 +50,9 @@ def test_run_upserts_macro_yields_into_fact_market_daily(db):
 
     ktb1y = db.query(DimAsset).filter_by(code="KTB1Y").one()
     row = db.query(FactMarketDaily).filter_by(asset_id=ktb1y.asset_id).one()
-    assert float(row.close) == 3.05
+    # BOK는 퍼센트(3.05)를 주지만, 이 프로젝트의 국고채 금리 단위 규약은 bp라서
+    # ×100(305.0)으로 정규화해 저장한다(G13, ingest_macro_rates.py docstring 참고).
+    assert float(row.close) == 305.0
     assert row.source == "bok_ecos"
 
     run_log = db.query(IngestionRun).filter_by(source="bok_macro_rates").order_by(IngestionRun.id.desc()).first()
@@ -72,7 +81,7 @@ def test_run_picks_latest_row_regardless_of_response_order(db):
 
     ktb1y = db.query(DimAsset).filter_by(code="KTB1Y").one()
     row = db.query(FactMarketDaily).filter_by(asset_id=ktb1y.asset_id).one()
-    assert float(row.close) == 3.05  # 07-30이 07-01보다 최신이므로 이 값이어야 한다
+    assert float(row.close) == 305.0  # 07-30(3.05%→305bp)이 07-01보다 최신이므로 이 값이어야 한다
 
 
 @respx.mock
