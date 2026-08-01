@@ -80,15 +80,24 @@ def risk_contributions(weights, covariance) -> np.ndarray:
     return w * (cov @ w) / sigma_p
 
 
-def risk_parity(covariance, max_iterations: int = ERC_MAX_ITERATIONS) -> np.ndarray:
-    """Equal Risk Contribution — 모든 자산의 위험 기여도를 같게 만드는 롱온리 비중.
+def risk_budget(
+    covariance, budgets, max_iterations: int = ERC_MAX_ITERATIONS
+) -> np.ndarray:
+    """지정된 위험 배분(risk budget)을 달성하는 롱온리 비중.
+
+    budgets: 자산별 목표 위험 비중(소수, 합 1.0). [0.4, 0.3, 0.3]이면 첫 자산이
+        포트폴리오 위험의 40%를 담당하게 만든다. 전부 1/n이면 리스크패리티다.
+
+    국민연금식 "위험한도 내 배분"이 이 형태다 — 자본을 얼마 배분할지가 아니라
+    **위험을 얼마나 지게 할지**를 먼저 정하고, 그에 맞는 자본 비중을 역산한다
+    (references/README.md).
 
     ## 알고리즘: 제곱근 감쇠 곱셈 갱신
 
-        wᵢ ← wᵢ × √( (σ²ₚ/n) / (wᵢ·(Σw)ᵢ) )   후 정규화
+        wᵢ ← wᵢ × √( (bᵢ·σ²ₚ) / (wᵢ·(Σw)ᵢ) )   후 정규화
 
-    분산 기준 위험기여도 wᵢ(Σw)ᵢ 가 목표치 σ²ₚ/n 에 못 미치면 비중을 키우고,
-    넘으면 줄인다. 수렴점에서 모든 wᵢ(Σw)ᵢ 가 같아지므로 곧 ERC다.
+    분산 기준 위험기여도 wᵢ(Σw)ᵢ 가 목표치 bᵢσ²ₚ 에 못 미치면 비중을 키우고,
+    넘으면 줄인다. 수렴점에서 각 자산의 위험기여 비중이 정확히 bᵢ가 된다.
 
     **감쇠(√) 없는 순진한 고정점 wᵢ ← 1/(Σw)ᵢ 를 쓰면 안 된다.** 그 반복은
     수렴하지 않고 진동한다 — 무상관 자산에서 균등가중과 1/σ² 비중 사이를 왕복하다
@@ -105,6 +114,14 @@ def risk_parity(covariance, max_iterations: int = ERC_MAX_ITERATIONS) -> np.ndar
     _validate(cov.ravel(), "공분산")
 
     n = cov.shape[0]
+    b = np.asarray(list(budgets), dtype=float)
+    if len(b) != n:
+        raise ValueError(f"위험예산 길이({len(b)})가 자산 수({n})와 다르다")
+    _validate(b, "위험예산")
+    if np.any(b <= 0):
+        raise ValueError("위험예산은 양수여야 한다 — 0이면 해당 자산 비중이 0으로 붕괴한다")
+    b = b / b.sum()
+
     if n == 1:
         return np.array([1.0])
     if np.any(np.diag(cov) <= 0):
@@ -124,16 +141,66 @@ def risk_parity(covariance, max_iterations: int = ERC_MAX_ITERATIONS) -> np.ndar
             # 상관을 무시하는 근사지만 항상 정의되는 역변동성으로 후퇴한다.
             return fallback
 
-        target = portfolio_var / n
-        w_new = w * np.sqrt(target / rc_var)
+        w_new = w * np.sqrt(b * portfolio_var / rc_var)
         w_new /= w_new.sum()
 
-        rc = risk_contributions(w_new, cov)
-        if rc.max() - rc.min() < ERC_TOLERANCE:
+        shares = risk_contribution_shares(w_new, cov)
+        if np.max(np.abs(shares - b)) < ERC_TOLERANCE:
             return w_new
         w = w_new
 
     return w
+
+
+def risk_parity(covariance, max_iterations: int = ERC_MAX_ITERATIONS) -> np.ndarray:
+    """Equal Risk Contribution — 모든 자산의 위험 기여도를 같게 만드는 롱온리 비중.
+
+    위험예산을 전부 1/n으로 둔 `risk_budget`의 특수 경우다.
+    """
+    cov = np.asarray(covariance, dtype=float)
+    if cov.ndim != 2 or cov.shape[0] != cov.shape[1]:
+        raise ValueError("공분산은 정방행렬이어야 한다")
+    n = cov.shape[0]
+    return risk_budget(cov, equal_weight(n), max_iterations)
+
+
+def risk_contribution_shares(weights, covariance) -> np.ndarray:
+    """자산별 위험 기여 **비중**(합 1.0). "이 자산이 전체 위험의 몇 %인가"."""
+    rc = risk_contributions(weights, covariance)
+    total = rc.sum()
+    if total == 0:
+        return np.zeros_like(rc)
+    return rc / total
+
+
+def sector_risk_shares(weights, covariance, sectors: list[str]) -> dict[str, float]:
+    """섹터별 위험 기여 비중. 자본 비중이 아니라 **위험** 비중이라는 점이 핵심 —
+    자본 30%인 섹터가 위험 60%를 지고 있을 수 있다."""
+    shares = risk_contribution_shares(weights, covariance)
+    if len(shares) != len(sectors):
+        raise ValueError(f"길이가 다르다: weights={len(shares)}, sectors={len(sectors)}")
+    out: dict[str, float] = {}
+    for sector, share in zip(sectors, shares):
+        out[sector] = out.get(sector, 0.0) + float(share)
+    return out
+
+
+def check_risk_limits(
+    weights, covariance, sectors: list[str], max_sector_risk_share: float
+) -> list[str]:
+    """섹터 위험한도 위반 목록. 비어 있으면 통과.
+
+    자본 상한(constraints.apply_sector_caps)과 별개다 — 자본을 한도 안으로 맞춰도
+    변동성이 큰 섹터면 위험은 한도를 넘을 수 있다. 국민연금식 리스크관리에서
+    감시하는 것은 후자다.
+    """
+    violations = []
+    for sector, share in sorted(sector_risk_shares(weights, covariance, sectors).items()):
+        if share > max_sector_risk_share + 1e-9:
+            violations.append(
+                f"{sector}: 위험기여 {share * 100:.1f}% > 한도 {max_sector_risk_share * 100:.1f}%"
+            )
+    return violations
 
 
 def apply_scores_as_tilt(base_weights, scores, tilt_strength: float = 0.5) -> np.ndarray:

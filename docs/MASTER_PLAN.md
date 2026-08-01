@@ -49,9 +49,9 @@ Bridgewater 수준과의 격차는 "페이지가 부족해서"도 "차트가 못
 | G3 | CallRank 신호가 순수 난수 — 실제 transcript 임베딩 없음 | `sector_embeddings.py` | **치명** |
 | G4 | MetroGuard City AI가 스텁 — 49개 입력 PCA-Ridge 미구현 | `city_ai_stub.py` | 높음 |
 | G5 | Point-in-time 정합성 장치 없음. 리포트 본문은 "7일 embargo"를 주장하지만 스키마에 공시시점 컬럼이 없어 강제 불가 | `db/models/*` | 높음 |
-| G6 | 리스크 지표 전무 — VaR, MDD, 변동성, 추적오차, 팩터 노출 | 없음 | 높음 |
-| G7 | 포트폴리오 구성 없음 — 랭킹만 있고 비중·제약·거래비용 없음 | 없음 | 높음 |
-| G8 | 성과 귀속(attribution) 없음 — Brinson, 팩터 기여도 | 없음 | 중간 |
+| G6 | ~~리스크 지표 전무~~ — **해소**(Phase 1 완료). 팩터 노출은 미구현 | `risk/metrics.py` | ~~높음~~ |
+| G7 | ~~포트폴리오 구성 없음~~ — **해소**(Phase 2 완료) | `portfolio/` | ~~높음~~ |
+| G8 | ~~성과 귀속 없음~~ — **해소** Brinson 3요소 분해 구현 | `portfolio/attribution.py` | ~~중간~~ |
 | G9 | 3개 리포트가 서로 대화하지 않음 (크로스에셋 뷰 부재) | 전역 | 중간 |
 | G10 | 컴플라이언스·면책 프레임 없음 | 없음 | 중간 |
 | G11 | 부동산 인제스천 미구현 (`NotImplementedError`) | `ingest_real_estate_deals.py` | 낮음 |
@@ -157,10 +157,10 @@ Bridgewater 수준과의 격차는 "페이지가 부족해서"도 "차트가 못
 | ~~2-1~~ | ~~비중 산출~~ — **완료** `portfolio/weighting.py` (동일가중·역변동성·ERC 리스크패리티·신호 tilt) |
 | ~~2-2~~ | ~~제약 엔진~~ — **완료** `portfolio/constraints.py` (종목 상·하한·섹터 상한·회전율 한도·교대 사영·실현가능성 검사) |
 | ~~2-3~~ | ~~거래비용 모델~~ — **완료** `portfolio/costs.py` (스프레드+√시장충격·리밸런싱 손익분기) |
-| 2-4 | **위험예산(risk budgeting)** — 국민연금식 "위험한도 내 배분" |
+| ~~2-4~~ | ~~위험예산~~ — **완료** `portfolio/weighting.py` (risk_budget·위험기여 비중·섹터 위험한도 검사) |
 | ~~2-5~~ | ~~Brinson 귀속~~ — **완료** `portfolio/attribution.py` (배분·선택·상호작용 분해, 항등식 검증) |
 
-리포트 반영: CallRank에 "이 랭킹이 실제 비중으로 어떻게 바뀌는가" 페이지 추가.
+리포트 반영: **완료** — CallRank 6페이지째 "랭킹이 비중으로 바뀌는 과정"(`portfolio/report_context.py`). 가격 이력 252거래일 미만이면 합성 공분산을 만들지 않고 대기 상태로 표시.
 
 ---
 

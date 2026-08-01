@@ -157,3 +157,92 @@ def test_tilt_output_is_long_only_and_normalized():
     w = apply_scores_as_tilt(equal_weight(4), [-5.0, 0.0, 3.0, 10.0], tilt_strength=1.0)
     assert np.all(w >= 0)
     assert w.sum() == pytest.approx(1.0)
+
+
+# --- 위험예산 (2-4) ---
+
+def test_risk_budget_achieves_the_specified_shares():
+    """정의 그 자체 — 지정한 위험 배분이 실제로 달성돼야 한다."""
+    from app.computation.portfolio.weighting import risk_budget, risk_contribution_shares
+
+    cov = _cov_from([0.10, 0.20, 0.35], [[1.0, 0.2, 0.4], [0.2, 1.0, 0.1], [0.4, 0.1, 1.0]])
+    budgets = [0.5, 0.3, 0.2]
+    w = risk_budget(cov, budgets)
+
+    shares = risk_contribution_shares(w, cov)
+    assert shares == pytest.approx(budgets, abs=1e-8)
+    assert w.sum() == pytest.approx(1.0)
+    assert np.all(w > 0)
+
+
+def test_risk_parity_is_risk_budget_with_equal_budgets():
+    cov = _cov_from([0.12, 0.28], [[1.0, 0.3], [0.3, 1.0]])
+    from app.computation.portfolio.weighting import risk_budget
+
+    assert risk_parity(cov) == pytest.approx(risk_budget(cov, [0.5, 0.5]), abs=1e-9)
+
+
+def test_higher_risk_budget_gets_more_capital_when_vols_equal():
+    from app.computation.portfolio.weighting import risk_budget
+
+    cov = _cov_from([0.2, 0.2], [[1.0, 0.0], [0.0, 1.0]])
+    w = risk_budget(cov, [0.8, 0.2])
+    assert w[0] > w[1]
+
+
+def test_risk_budget_normalizes_unnormalized_budgets():
+    from app.computation.portfolio.weighting import risk_budget
+
+    cov = _cov_from([0.1, 0.2], [[1.0, 0.1], [0.1, 1.0]])
+    assert risk_budget(cov, [2.0, 2.0]) == pytest.approx(risk_budget(cov, [0.5, 0.5]), abs=1e-9)
+
+
+def test_risk_budget_rejects_zero_budget():
+    """0 예산은 해당 자산 비중을 0으로 붕괴시킨다 — 조용히 처리하지 않고 거부한다."""
+    from app.computation.portfolio.weighting import risk_budget
+
+    with pytest.raises(ValueError):
+        risk_budget(_diagonal_cov([0.1, 0.2]), [1.0, 0.0])
+
+
+def test_risk_budget_rejects_length_mismatch():
+    from app.computation.portfolio.weighting import risk_budget
+
+    with pytest.raises(ValueError):
+        risk_budget(_diagonal_cov([0.1, 0.2]), [0.5, 0.3, 0.2])
+
+
+def test_risk_contribution_shares_sum_to_one():
+    from app.computation.portfolio.weighting import risk_contribution_shares
+
+    cov = _cov_from([0.15, 0.25], [[1.0, 0.3], [0.3, 1.0]])
+    assert risk_contribution_shares([0.6, 0.4], cov).sum() == pytest.approx(1.0)
+
+
+def test_sector_risk_shares_aggregate_by_group():
+    from app.computation.portfolio.weighting import sector_risk_shares
+
+    cov = _diagonal_cov([0.2, 0.2, 0.2])
+    shares = sector_risk_shares([1 / 3] * 3, cov, ["Tech", "Tech", "Energy"])
+    assert set(shares) == {"Tech", "Energy"}
+    assert sum(shares.values()) == pytest.approx(1.0)
+    assert shares["Tech"] == pytest.approx(2 / 3)
+
+
+def test_risk_limit_violation_can_occur_despite_capital_being_within_cap():
+    """자본 비중이 한도 안이어도 변동성이 크면 위험 비중은 한도를 넘을 수 있다 —
+    자본 상한과 위험 한도가 별개인 이유."""
+    from app.computation.portfolio.weighting import check_risk_limits, sector_risk_shares
+
+    cov = _diagonal_cov([0.60, 0.05])  # 첫 자산이 훨씬 위험하다
+    weights = [0.40, 0.60]  # 자본은 40%로 한도(50%) 안
+    shares = sector_risk_shares(weights, cov, ["Risky", "Safe"])
+    assert shares["Risky"] > 0.50, "위험 비중은 자본 비중보다 훨씬 크다"
+    assert check_risk_limits(weights, cov, ["Risky", "Safe"], max_sector_risk_share=0.50)
+
+
+def test_risk_limits_pass_when_within_budget():
+    from app.computation.portfolio.weighting import check_risk_limits
+
+    cov = _diagonal_cov([0.2, 0.2])
+    assert check_risk_limits([0.5, 0.5], cov, ["A", "B"], max_sector_risk_share=0.60) == []
