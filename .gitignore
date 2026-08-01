@@ -10,3 +10,6 @@ venv/
 
 # 인제스천 raw 응답 아카이브 — 런타임 산출물, 소스 아님
 data/raw_archive/
+
+# PDF 자산화 업로드 원본 — 런타임 산출물, 소스 아님(app/extraction/pipeline.py)
+data/pdf_uploads/

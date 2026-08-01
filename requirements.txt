@@ -29,6 +29,15 @@ seaborn==0.13.2
 httpx==0.28.1
 apscheduler==3.11.3
 
+# --- PDF 자산화(app/extraction) ---
+# pdfplumber로 텍스트 레이어를 먼저 시도하고, 텍스트가 부족한 페이지(스캔본)만
+# pytesseract+pdf2image로 OCR 폴백한다. pytesseract는 시스템에 Tesseract OCR
+# 실행파일이, pdf2image는 poppler가 별도로 설치돼 있어야 동작한다(파이썬
+# 패키지만으로는 부족 — README 참고).
+pdfplumber==0.11.10
+pytesseract==0.3.13
+pdf2image==1.17.0
+
 # --- Sync (Supabase 서빙 캐시 / Cloudflare R2 PDF 저장) ---
 boto3==1.43.61
 

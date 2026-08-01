@@ -8,6 +8,8 @@ from app.db.base import Base
 from app.db.models import (  # noqa: F401
     dim_asset,
     dim_date,
+    extracted_document,
+    extracted_value,
     fact_financial_quarterly,
     fact_market_daily,
     fact_real_estate_deal,

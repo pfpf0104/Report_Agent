@@ -2,7 +2,7 @@ import logging
 
 from fastapi import Depends, FastAPI
 
-from app.api.routers import health_router, ingestion_router, reports_router
+from app.api.routers import extraction_router, health_router, ingestion_router, reports_router
 from app.core.config import settings
 from app.core.security import verify_api_key
 from app.ingestion.scheduler import create_scheduler
@@ -30,6 +30,12 @@ app.include_router(
     reports_router.router,
     prefix="/reports",
     tags=["reports"],
+    dependencies=[Depends(verify_api_key)],
+)
+app.include_router(
+    extraction_router.router,
+    prefix="/extraction",
+    tags=["extraction"],
     dependencies=[Depends(verify_api_key)],
 )
 

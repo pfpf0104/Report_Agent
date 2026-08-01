@@ -50,3 +50,32 @@ python -m pytest tests -q
 `app/ingestion/connectors/`의 DART·BOK ECOS·FRED·FMP·KIS 클라이언트는 전부
 실제 API 키로 라이브 검증을 거쳤다. 세부 사항은 각 커넥터/잡 파일의 docstring을
 참고한다.
+
+## PDF 자산화 + Cross-check 검증 (`app/extraction`, `app/validation`)
+
+임의의 PDF(재무제표·기업정보 리포트 등)를 업로드하면 텍스트/표에서 숫자를
+추출해 `extracted_document`/`extracted_value` 테이블에 자산화하고, 각 값을
+Cross-check 엔진으로 검증한다. `POST /extraction/upload`로 업로드하고
+`GET /extraction/documents/{id}`로 결과를 조회한다(`X-API-Key` 헤더 필요).
+
+- **추출**: `app/extraction/pdf_parser.py`가 pdfplumber로 텍스트 레이어를 먼저
+  시도하고, 페이지의 텍스트가 부족하면(스캔본) pytesseract+pdf2image로 OCR
+  폴백한다. `app/extraction/number_extractor.py`가 "라벨 + 숫자(+단위)" 후보를
+  뽑는다 — FnGuide류 PDF의 "단위 : 억원" 섹션 헤더를 인식해 원 단위로 정규화한다
+  (실제 SK하이닉스 재무제표 PDF로 검증: 정규화 전에는 DART 실측치와 자릿수가
+  달라 mismatch로 잘못 판정되던 것을 수정해 verified로 확인함).
+- **검증**: `app/validation/engine.py`가 내부 체커(DART 등 이미 연동된 실데이터,
+  `app/validation/checkers/internal_checkers.py`)를 먼저 시도하고, 담당 범위
+  밖이면 외부 웹 검색 체커(`web_search_checker.py`)로 폴백한다. 웹 검색은
+  `WebSearchProvider` 인터페이스만 정의돼 있고 실제 프로바이더(Google/Bing 등)는
+  아직 미구현 — API 키 발급 전까지는 `check_failed`로 남아 "사람이 확인해야
+  할 값"으로 분류된다.
+- **검증 상태 4종**: `verified`(허용오차 이내 일치) / `mismatch`(대조했지만
+  어긋남 — 최우선 검토 대상) / `check_failed`(대조를 시도했지만 소스를 못 찾음) /
+  `unverified`(대조 자체를 안 함). `GET /extraction/documents/{id}` 응답은
+  `verified_values`와 `needs_review_values`(mismatch/check_failed/unverified 합산)로
+  분리해 반환한다.
+
+**시스템 의존성**: OCR 폴백을 쓰려면 파이썬 패키지 외에 Tesseract OCR
+실행파일과 poppler(pdf2image가 내부적으로 사용)가 시스템에 설치돼 있어야 한다.
+텍스트 레이어가 있는 PDF만 다룬다면 이 둘 없이도 정상 동작한다.
