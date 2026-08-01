@@ -9,6 +9,7 @@ SUPABASE_URL/SUPABASE_SERVICE_KEY가 설정되지 않으면 조용히 스킵한�
 """
 from __future__ import annotations
 
+import json
 import logging
 from datetime import date
 
@@ -85,14 +86,22 @@ def sync_report_snapshot(
         "pdf_url": pdf_url,
     }
     try:
+        # context는 리포트 computation 모듈이 만든 dict를 그대로 담고 있어
+        # RimScenario 같은 dataclass 인스턴스가 섞여 있을 수 있다(예: 밸류에이션
+        # 리포트의 base_scenario). httpx의 json= 파라미터는 표준 json.dumps를
+        # 그대로 쓰므로 이런 값이 있으면 TypeError로 죽는다 — 실제로
+        # build_valuation_context() 결과로 재현 확인함. default=str로 직접
+        # 인코딩해 알 수 없는 타입은 문자열로 대체하고, 백그라운드 태스크가
+        # 조용히 실패하도록 TypeError/ValueError도 함께 잡는다.
+        body = json.dumps(payload, default=str, ensure_ascii=False).encode("utf-8")
         response = httpx.post(
             f"{settings.supabase_url}/rest/v1/report_snapshot",
             headers=headers,
-            json=payload,
+            content=body,
             timeout=10,
         )
         response.raise_for_status()
-    except httpx.HTTPError as exc:
+    except (httpx.HTTPError, TypeError, ValueError) as exc:
         logger.warning(
             "report_snapshot 동기화 실패 (%s/%s): %s", report_type, report_date, exc
         )
