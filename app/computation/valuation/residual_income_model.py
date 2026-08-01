@@ -130,6 +130,25 @@ WHAT_AND_WHY_CARDS = [
     },
 ]
 
+CYCLE_SCENARIO_CARDS = [
+    {
+        "title": "제한적 추격 (20%)",
+        "body": "후발주자의 미세공정 전환이 지연되며 한국 업체의 기술 격차가 유지된다. 과거 사례: 2016~2017년 슈퍼사이클처럼 공급이 타이트하게 유지되는 국면.",
+    },
+    {
+        "title": "점진적 추격 (50%)",
+        "body": "중국·대만 업체가 범용 제품군에서 점유율을 서서히 늘리며 ROE가 완만하게 정상화된다. 중심 시나리오로 가장 높은 확률을 배정한다.",
+    },
+    {
+        "title": "공격적 추격 (25%)",
+        "body": "경쟁사가 대규모 증설로 공급을 늘려 가격이 예상보다 빠르게 정상화된다. 2018~2019년 D램 다운사이클과 유사한 압축 국면.",
+    },
+    {
+        "title": "가격전쟁 (5%)",
+        "body": "저가 출혈 경쟁이 벌어져 ROE가 자기자본비용을 밑도는 구간까지 악화된다. 2011년 D램 치킨게임처럼 확률은 낮지만 꼬리위험으로 반영한다.",
+    },
+]
+
 FORMULA_CARDS = [
     {
         "title": "01 · 초과이익 (Excess Income)",
@@ -350,6 +369,7 @@ def build_valuation_context(db: Session, as_of: date) -> dict:
             "rows": table_rows,
         },
         "what_and_why_cards": WHAT_AND_WHY_CARDS,
+        "cycle_scenario_cards": CYCLE_SCENARIO_CARDS,
         "formula_cards": FORMULA_CARDS,
         "workflow_steps": WORKFLOW_STEPS,
         "checklist_items": CHECKLIST_ITEMS,

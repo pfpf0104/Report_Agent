@@ -47,6 +47,21 @@
   <div class="top-bar"></div>
   <div class="page-body">
     {{ report_header(
+      "INDUSTRY CYCLE CONTEXT",
+      "4개 시나리오는 실제 메모리 사이클 국면에 대응한다",
+      "제한적/점진적/공격적 추격, 가격전쟁은 임의의 이름이 아니라 과거 D램 사이클의 반복되는 국면이다.",
+      ["시나리오 확률가중치의 근거"]
+    ) }}
+
+    {{ info_cards(cycle_scenario_cards) }}
+  </div>
+  {{ report_footer("과거 사이클 사례는 정성적 참고이며 확률가중치를 기계적으로 도출하지 않았다") }}
+</div>
+
+<div class="page">
+  <div class="top-bar"></div>
+  <div class="page-body">
+    {{ report_header(
       "METHODOLOGY",
       "적정가가 계산되는 3단계",
       "초과이익, 장부가치 이월, 잔여가치의 순서로 매년 재귀 계산한다.",
