@@ -452,9 +452,19 @@ def build_performance_context(
             f"월말 리밸런싱 {len(result.rebalance_indices)}회 · "
             f"종목 상한 {effective.max_weight * 100:.1f}%"
             + (
-                f" (설정값 {constraints.max_weight * 100:.0f}%는 {len(universe)}개 자산에 "
-                f"적용 불가라 1/n으로 완화 — 이 경우 모든 비중이 1/n으로 강제되어 "
-                f"리스크패리티 결과가 반영되지 않는다)" if relaxed else ""
+                (
+                    f" (설정값 {constraints.max_weight * 100:.0f}%는 {len(universe)}개 자산에 "
+                    f"적용 불가라 1/n으로 완화 — 이 경우 모든 비중이 1/n으로 강제되어 "
+                    f"리스크패리티 결과가 반영되지 않는다)"
+                    if weight_fn is None
+                    # weight_fn을 명시 주입한 경우(예: MetroGuard의 고정 배분)는
+                    # 리스크패리티가 아니므로 위 문구가 오도한다 — 완화 사실만
+                    # 중립적으로 밝힌다("리스크패리티 결과"라는 표현을 쓰지 않는다).
+                    else f" (설정값 {constraints.max_weight * 100:.0f}%는 {len(universe)}개 자산에 "
+                    f"적용 불가라 1/n으로 완화 — 지정된 배분 규칙이 이 상한을 넘으면 "
+                    f"완화된 상한선까지 잘려 표시된다)"
+                )
+                if relaxed else ""
             )
             + f" · {cost_model.describe()} · "
             f"누적 거래비용 {result.total_cost * 1e4:.0f}bp · "

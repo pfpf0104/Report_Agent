@@ -318,3 +318,27 @@ def test_benchmark_in_universe_uses_the_injected_weight_fn_not_risk_parity(db):
 
     assert context["performance_available"] is True
     assert context["performance_strategy_label"] == "테스트 고정 배분"
+
+
+def test_relaxed_cap_disclosure_does_not_mislabel_a_non_risk_parity_strategy(db):
+    """weight_fn을 명시 주입했는데(리스크패리티가 아님) 유니버스가 작아 상한이
+    완화되면, 가정 문구가 "리스크패리티 결과가 반영되지 않는다"는 CallRank
+    전용 표현을 그대로 쓰면 안 된다 — MetroGuard 같은 고정배분 전략에는
+    사실과 다른 설명이 된다."""
+    from app.computation.backtest.engine import buy_and_hold
+
+    two_asset_universe = [UNIVERSE[0], UNIVERSE[1]]
+    benchmark = UNIVERSE[1]
+    n = MIN_BACKTEST_OBSERVATIONS + 60
+    dates = _business_days(n)
+    for i, code in enumerate(two_asset_universe):
+        _seed(db, code, dates, _price_path(n, 900 + i, vol=0.005 + 0.015 * i))
+
+    context = build_performance_context(
+        db, dates[-1], two_asset_universe, benchmark,
+        weight_fn=buy_and_hold([0.5, 0.5]),
+        benchmark_in_universe=True,
+    )
+
+    assert "1/n으로 완화" in context["performance_assumptions"]
+    assert "리스크패리티" not in context["performance_assumptions"]
