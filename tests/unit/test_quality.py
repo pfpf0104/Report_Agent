@@ -216,6 +216,26 @@ def test_outlier_flags_large_absolute_move_for_macro_spread(db):
     assert "+3.50" in issues[0].detail
 
 
+def test_outlier_absolute_move_exactly_at_threshold_is_not_flagged(db):
+    """경계값(임계와 정확히 같은 변동)은 잡히면 안 된다 — 코드가 `>`(초과)를
+    쓰지 `>=`(이상)를 쓰지 않는다는 걸 명시적으로 고정한다."""
+    asset = _asset(db, "TESTSPREAD", AssetType.MACRO_INDEX.value, currency="USD")
+    _add(db, asset, date(2026, 7, 29), 0.0)
+    _add(db, asset, date(2026, 7, 30), 3.0)  # 절대변동이 임계(3.0)와 정확히 같음
+
+    assert check_outliers(asset, _rows(db, asset)) == []
+
+
+def test_outlier_absolute_move_just_over_threshold_is_flagged(db):
+    asset = _asset(db, "TESTSPREAD", AssetType.MACRO_INDEX.value, currency="USD")
+    _add(db, asset, date(2026, 7, 29), 0.0)
+    _add(db, asset, date(2026, 7, 30), 3.01)  # 임계(3.0)를 근소하게 초과
+
+    issues = check_outliers(asset, _rows(db, asset))
+
+    assert len(issues) == 1
+
+
 def test_outlier_uses_absolute_move_for_macro_rate_at_low_bp_level(db):
     """MACRO(금리, bp)도 저금리 구간에서는 절대값이 작아 상대변동%이 발산한다
     — 2026-08 실측: 2021년 US1MO가 3~10bp대에서 1bp만 움직여도 상대변동
