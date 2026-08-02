@@ -133,7 +133,7 @@ def build_metroguard_context(db: Session, as_of: date) -> dict:
     ledger = LotLedger()
     decisions = []
     for origin in _trailing_month_ends(as_of, count=4):
-        city_ai = synthetic_city_ai_output(origin)
+        city_ai = synthetic_city_ai_output(db, origin)
         gate = compute_carry_price_gate(
             city_ai["predicted_change_bp"], city_ai["yield_3y_bp"], city_ai["yield_1y_bp"]
         )
@@ -214,9 +214,9 @@ def build_metroguard_context(db: Session, as_of: date) -> dict:
         **build_duration_performance_context(db, as_of),
         "sensitivity_rows": sensitivity_rows,
         "warning_function_chart_uri": _warning_function_chart(),
-        "historical_g_chart_uri": _historical_g_chart(as_of),
+        "historical_g_chart_uri": _historical_g_chart(db, as_of),
         "glossary_cards": GLOSSARY_CARDS,
-        "source": "MetroGuard-KR · 월말 운용·연구 보고서 (City AI 입력은 합성 데이터)",
+        "source": "MetroGuard-KR · 월말 운용·연구 보고서 (금리커브는 실측, 63거래일 예측은 합성 데이터)",
     }
 
 
@@ -251,7 +251,7 @@ def _warning_function_chart() -> str:
     return line_chart(x_labels, {"g (경고 강도)": g_values}, figsize=(6.2, 2.2), max_x_ticks=6)
 
 
-def _historical_g_chart(as_of: date, months: int = 12) -> str:
+def _historical_g_chart(db: Session, as_of: date, months: int = 12) -> str:
     """운용에 쓰이는 활성 lot 원장(최근 4개월)보다 긴 12개월 g 추이를 참고용으로
     그린다. 같은 실제 함수(compute_carry_price_gate/compute_warning)를 더 긴
     구간에 적용한 것으로, lot 활성 여부 판정과는 별개다.
@@ -261,7 +261,7 @@ def _historical_g_chart(as_of: date, months: int = 12) -> str:
     origins = _trailing_month_ends(as_of, count=months)
     g_values = []
     for origin in origins:
-        city_ai = synthetic_city_ai_output(origin)
+        city_ai = synthetic_city_ai_output(db, origin)
         gate = compute_carry_price_gate(
             city_ai["predicted_change_bp"], city_ai["yield_3y_bp"], city_ai["yield_1y_bp"]
         )
