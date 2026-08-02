@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.computation.fixed_income.duration_controller import build_metroguard_context
 from app.computation.quant.ridge_sector_rank import build_callrank_context
+from app.computation.regime.dashboard_context import build_macro_regime_context
 from app.computation.valuation.residual_income_model import build_valuation_context
 from app.db.base import get_db
 from app.rendering.pdf_service import render_report_pdf_async
@@ -21,12 +22,14 @@ class ReportType(str, Enum):
     callrank = "callrank"
     metroguard = "metroguard"
     valuation = "valuation"
+    macro_regime = "macro_regime"
 
 
 _CONTEXT_BUILDERS = {
     ReportType.callrank: build_callrank_context,
     ReportType.metroguard: build_metroguard_context,
     ReportType.valuation: build_valuation_context,
+    ReportType.macro_regime: build_macro_regime_context,
 }
 
 
