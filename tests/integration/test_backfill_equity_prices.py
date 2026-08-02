@@ -57,16 +57,21 @@ def _chart_response(timestamps: list[int], closes: list[float]) -> dict:
     }
 
 
+def _mock_all_symbols(ts: int, overrides: dict[str, float] | None = None) -> None:
+    """job.SYMBOLS(11개 섹터 ETF + SPY)의 모든 심볼에 응답을 mock한다."""
+    overrides = overrides or {}
+    for i, symbol in enumerate(job.SYMBOLS):
+        close = overrides.get(symbol, 100.0 + i)
+        respx.get(f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}").mock(
+            return_value=httpx.Response(200, json=_chart_response([ts], [close]))
+        )
+
+
 @respx.mock
 def test_backfill_inserts_rows_with_trade_date_from_timestamp(db):
     # 2026-01-15 00:00:00 UTC
     ts = 1768435200
-    respx.get("https://query1.finance.yahoo.com/v8/finance/chart/XLE").mock(
-        return_value=httpx.Response(200, json=_chart_response([ts], [95.5]))
-    )
-    respx.get("https://query1.finance.yahoo.com/v8/finance/chart/SPY").mock(
-        return_value=httpx.Response(200, json=_chart_response([ts], [550.0]))
-    )
+    _mock_all_symbols(ts, {"XLE": 95.5, "SPY": 550.0})
 
     job.run()
 
@@ -76,6 +81,25 @@ def test_backfill_inserts_rows_with_trade_date_from_timestamp(db):
     assert row.knowledge_date == date(2026, 1, 15)
     assert float(row.close) == 95.5
     assert row.source == "yahoo_finance_backfill"
+
+
+@respx.mock
+def test_backfill_inserts_all_sector_etfs_and_benchmark(db):
+    """핵심 회귀: 11개 섹터 ETF + SPY 전부 백필돼야 한다 — CallRank 성과
+    페이지가 리스크패리티 계산에 최소 2개 자산을 요구하므로, 섹터 ETF가
+    하나만 채워지면 항상 보류 상태로 남는다(실제로 XLE만 있을 때 이 문제가
+    재현됐다)."""
+    ts = 1768435200
+    _mock_all_symbols(ts)
+
+    job.run()
+
+    for symbol in job.SYMBOLS:
+        asset = db.query(DimAsset).filter_by(code=symbol).one()
+        row = db.query(FactMarketDaily).filter_by(asset_id=asset.asset_id).one()
+        assert row.source == "yahoo_finance_backfill"
+
+    assert len(job.SYMBOLS) >= 11
 
 
 @respx.mock
@@ -93,12 +117,7 @@ def test_backfill_skips_dates_already_present(db):
     db.commit()
 
     ts = 1768435200
-    respx.get("https://query1.finance.yahoo.com/v8/finance/chart/XLE").mock(
-        return_value=httpx.Response(200, json=_chart_response([ts], [95.5]))
-    )
-    respx.get("https://query1.finance.yahoo.com/v8/finance/chart/SPY").mock(
-        return_value=httpx.Response(200, json=_chart_response([ts], [550.0]))
-    )
+    _mock_all_symbols(ts, {"XLE": 95.5, "SPY": 550.0})
 
     job.run()
 

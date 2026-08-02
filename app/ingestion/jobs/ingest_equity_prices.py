@@ -5,8 +5,11 @@
 비공식 차트 API(무료, 키 불필요)로 교체했다 — app/ingestion/connectors/
 yahoo_finance_client.py 참고.
 
-TODO: SYMBOLS를 하드코딩 대신 dim_asset(asset_type='ETF' 등)에서 동적으로
-조회하도록 바꿔야 한다. 지금은 CallRank가 실제로 쓰는 두 개(XLE, SPY)만 다룬다.
+SYMBOLS = CallRank의 11개 섹터 ETF 전체 + 벤치마크(SPY). 이전에는 XLE 하나만
+다뤄 risk/report_context.py의 성과 페이지가 "유니버스 자산 1개 — 2개 이상
+필요"로 항상 보류됐다 — 리스크패리티 배분은 최소 2개 자산의 공분산이 필요한데
+섹터 ETF 실데이터가 사실상 하나뿐이었기 때문이다. SECTOR_ETF_BY_NAME에서
+동적으로 가져와 하드코딩 목록을 이중 관리하지 않는다.
 """
 from __future__ import annotations
 
@@ -16,13 +19,14 @@ from datetime import datetime, timezone
 import httpx
 from sqlalchemy.orm import Session
 
+from app.computation.quant.sector_embeddings import SECTOR_ETF_BY_NAME
 from app.db.base import SessionLocal
 from app.db.models.dim_asset import AssetType, DimAsset
 from app.db.models.fact_market_daily import FactMarketDaily
 from app.ingestion.connectors.yahoo_finance_client import fetch_daily_history
 from app.ingestion.run_tracker import track_ingestion_run
 
-SYMBOLS = ["XLE", "SPY"]
+SYMBOLS = sorted(set(SECTOR_ETF_BY_NAME.values()) | {"SPY"})
 
 
 async def _fetch_all_quotes(symbols: list[str]) -> dict[str, dict]:
