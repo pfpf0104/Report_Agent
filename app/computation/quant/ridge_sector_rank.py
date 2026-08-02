@@ -33,6 +33,7 @@ from app.computation.quant.sector_embeddings import (
     generate_frozen_hedge_training_set,
 )
 from app.computation.portfolio.report_context import build_portfolio_context
+from app.computation.regime.report_context import build_regime_report_context
 from app.computation.risk.cross_asset import build_cross_asset_report_context
 from app.computation.risk.report_context import build_performance_context
 from app.db.models.dim_asset import DimAsset
@@ -258,6 +259,7 @@ def build_callrank_context(db: Session, as_of: date, leading_sector_seed: str = 
             **_performance(db, as_of),
             **build_portfolio_context(db, as_of, [], SECTOR_ETF_BY_NAME),
             **build_cross_asset_report_context(db, as_of),
+            **build_regime_report_context(db, as_of),
         }
 
     top_sector = ranking["normalized_direction"][0]["sector"]
@@ -304,6 +306,7 @@ def build_callrank_context(db: Session, as_of: date, leading_sector_seed: str = 
         **_performance(db, as_of),
         **build_portfolio_context(db, as_of, ranking["normalized_direction"], SECTOR_ETF_BY_NAME),
         **build_cross_asset_report_context(db, as_of),
+        **build_regime_report_context(db, as_of),
     }
 
 

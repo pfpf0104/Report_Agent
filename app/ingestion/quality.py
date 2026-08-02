@@ -70,10 +70,16 @@ WARNING = "warning"
 # (50~200)가 섞여 있어 상식범위를 넓게 잡는다 — 목적이 정밀한 이상치 탐지가
 # 아니라 "자릿수가 완전히 틀렸는가"(예: bp로 착각해 ×100 되어 있는가)이므로
 # 이 정도 폭이면 충분하다.
+# MACRO_ECONOMIC(GDP·CPI·산업생산·고용, USD)는 자산 하나하나가 서로 자릿수가
+# 완전히 다르다 — CPI/산업생산은 지수 레벨(수백대), GDP는 실질 10억달러
+# 단위(2만대), 고용은 천명 단위(15만대). 이 asset_type 하나로 묶인 지표들의
+# 자릿수 폭이 넓어 상한을 아주 크게(1000만) 잡는다 — 목적은 정밀한 범위
+# 검증이 아니라 완전히 틀린 자릿수(예: 소수점 위치 오류)만 잡는 것이다.
 PLAUSIBLE_RANGES: dict[tuple[str, str], tuple[float, float]] = {
     (AssetType.MACRO.value, "KRW"): (10.0, 2000.0),
     (AssetType.MACRO.value, "USD"): (-500.0, 2000.0),
     (AssetType.MACRO_INDEX.value, "USD"): (-10.0, 200.0),
+    (AssetType.MACRO_ECONOMIC.value, "USD"): (1.0, 10_000_000.0),
     (AssetType.EQUITY.value, "KRW"): (100.0, 10_000_000.0),
     (AssetType.EQUITY.value, "USD"): (0.1, 100_000.0),
     (AssetType.ETF.value, "KRW"): (1.0, 1_000_000.0),
@@ -85,6 +91,7 @@ PLAUSIBLE_RANGES: dict[tuple[str, str], tuple[float, float]] = {
 _FALLBACK_RANGE: dict[str, tuple[float, float]] = {
     AssetType.MACRO.value: (-500.0, 2000.0),
     AssetType.MACRO_INDEX.value: (-10.0, 200.0),
+    AssetType.MACRO_ECONOMIC.value: (1.0, 10_000_000.0),
     AssetType.EQUITY.value: (0.1, 10_000_000.0),
     AssetType.ETF.value: (0.1, 1_000_000.0),
 }
@@ -98,6 +105,12 @@ _PERCENT_LOOKING_BP_THRESHOLD = 100.0
 MAX_DAILY_MOVE_PCT: dict[str, float] = {
     AssetType.EQUITY.value: 35.0,
     AssetType.ETF.value: 25.0,
+    # MACRO_ECONOMIC은 월간·분기 발표라 인접 관측치 간 상대변동이 자연히
+    # 작다(CPI/산업생산 지수는 통상 월 1% 미만 변동) — MACRO_INDEX/MACRO와
+    # 달리 절대값이 항상 크게 유지되므로(수백~수만대) 상대변동%이 발산하는
+    # 문제가 없다. 20%는 GDP 분기 급락(팬데믹 초기 등) 같은 드문 사건도
+    # 여유 있게 허용하면서 명백한 소수점 오류는 잡는 수준.
+    AssetType.MACRO_ECONOMIC.value: 20.0,
 }
 
 # MACRO/MACRO_INDEX는 상대변동%이 아니라 절대변동으로 이상치를 본다.
@@ -116,7 +129,7 @@ MAX_DAILY_MOVE_ABS: dict[str, float] = {
     AssetType.MACRO_INDEX.value: 3.0,  # 스프레드(%p)·지수(포인트) 공통 — 하루 3 단위 이상 변화면 확인 필요
 }
 
-STALE_AFTER_DAYS = 7  # 주말·공휴일 연휴를 감안한 기본값
+STALE_AFTER_DAYS = 7  # 주말·공휴일 연휴를 감안한 기본값(일별 시세 가정)
 
 # 자산코드별 스테일 임계 예외. 연준 H.10(달러지수) 발표 자체가 실측으로 확인한
 # 결과 며칠 지연된다(2026-08 실측: DTWEXBGS observation_end가 조회일 대비
@@ -124,6 +137,17 @@ STALE_AFTER_DAYS = 7  # 주말·공휴일 연휴를 감안한 기본값
 # 스케줄의 정상적인 특성). 기본 7일로는 매일 오탐이 나 15일로 넉넉히 둔다.
 STALE_AFTER_DAYS_OVERRIDE: dict[str, int] = {
     "USDINDEX": 15,
+}
+
+# 자산유형 전체를 관대한 스테일 임계로 두는 예외 — 코드마다 등록하지 않아도
+# 되도록 asset_type 단위로 잡는다. MACRO_ECONOMIC(GDP·CPI·산업생산·고용)은
+# 월간·분기 발표라 기본 7일 임계값을 쓰면 발표 직후 며칠을 빼고는 항상
+# ERROR로 잡힌다. 특히 GDP(분기)는 분기 자체가 92일인 데다 발표 지연까지
+# 더해져 2026-08 실측 시점 최신 관측치(2026-04-01, 1분기)가 조회일(8월)
+# 기준 124일 경과한 상태였다 — 정상 상태인데도 100일 임계로는 여전히
+# 오탐이 났다. 150일로 늘려 분기+지연을 모두 커버한다.
+STALE_AFTER_DAYS_OVERRIDE_BY_TYPE: dict[str, int] = {
+    AssetType.MACRO_ECONOMIC.value: 150,
 }
 
 
@@ -315,10 +339,16 @@ def run_quality_gate(
         if missing:
             continue  # 데이터가 없으면 나머지 검사는 의미 없다
 
-        stale_threshold = STALE_AFTER_DAYS_OVERRIDE.get(asset.code, STALE_AFTER_DAYS)
+        stale_threshold = STALE_AFTER_DAYS_OVERRIDE.get(
+            asset.code, STALE_AFTER_DAYS_OVERRIDE_BY_TYPE.get(asset.asset_type, STALE_AFTER_DAYS)
+        )
         report.issues.extend(check_staleness(asset, rows, as_of, stale_threshold))
         report.issues.extend(check_value_range(asset, rows))
         report.issues.extend(check_outliers(asset, rows))
-        report.issues.extend(check_missing_business_days(asset, rows))
+        if asset.asset_type != AssetType.MACRO_ECONOMIC.value:
+            # 월간·분기 발표 지표는 "영업일 결측"이라는 개념 자체가 안 맞는다
+            # (정상적으로 한 달에 한 번만 값이 생긴다) — 이 검사는 일별 시세를
+            # 가정하므로 제외한다.
+            report.issues.extend(check_missing_business_days(asset, rows))
 
     return report

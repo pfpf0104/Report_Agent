@@ -33,6 +33,7 @@ import numpy as np
 from sqlalchemy.orm import Session
 
 from app.computation.fixed_income.city_ai_stub import synthetic_city_ai_output
+from app.computation.regime.report_context import build_regime_report_context
 from app.computation.risk.cross_asset import build_cross_asset_report_context
 from app.computation.risk.report_context import build_duration_performance_context
 
@@ -219,6 +220,7 @@ def build_metroguard_context(db: Session, as_of: date) -> dict:
         "glossary_cards": GLOSSARY_CARDS,
         "source": "MetroGuard-KR · 월말 운용·연구 보고서 (금리커브는 실측, 63거래일 예측은 합성 데이터)",
         **build_cross_asset_report_context(db, as_of),
+        **build_regime_report_context(db, as_of),
     }
 
 

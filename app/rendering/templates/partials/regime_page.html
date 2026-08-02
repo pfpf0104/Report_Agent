@@ -1,0 +1,47 @@
+{# 레짐 분류 페이지 — CallRank/MetroGuard/밸류에이션 3개 리포트가 공유한다
+   (app/computation/regime/report_context.py). include하는 템플릿은 report_header/
+   callout_box/metric_cards/report_footer 매크로를 이미 import하고 있어야 한다. #}
+{% if regime_available %}
+<div class="page">
+  <div class="top-bar"></div>
+  <div class="page-body">
+    {{ report_header(
+      "MACRO REGIME",
+      regime_quadrant,
+      "산업생산·CPI YoY 변화율의 추세 방향(직전 대비 가속/감속)으로 판정한 성장×인플레이션 4분면.",
+      [regime_as_of_month ~ " 기준", regime_data_status]
+    ) }}
+
+    {{ metric_cards(regime_cards) }}
+
+    {{ callout_box("info", regime_quadrant ~ " — 이 국면이 통상 뜻하는 것", regime_description) }}
+    {{ callout_box("warning", "이 판정이 말하지 않는 것", regime_disclosure) }}
+
+    <table class="data-table" style="margin-top:8px;">
+      <thead>
+        <tr><th>지표</th><th>최신 YoY</th><th>직전 YoY</th><th>추세</th></tr>
+      </thead>
+      <tbody>
+        {% for row in regime_indicator_rows %}
+        <tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    {% if regime_reference_rows %}
+    <div style="margin-top:14px; font-weight:700; font-size:9.5px; color:#1f2933;">보조 확인 지표 (판정에는 관여하지 않음)</div>
+    <table class="data-table" style="margin-top:4px;">
+      <thead>
+        <tr><th>지표</th><th>최신 관측월</th><th>최신값</th><th>YoY</th></tr>
+      </thead>
+      <tbody>
+        {% for row in regime_reference_rows %}
+        <tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </div>
+  {{ report_footer("계산: app/computation/regime/classifier.py — 판정 지표는 산업생산·CPI 2개로 고정") }}
+</div>
+{% endif %}

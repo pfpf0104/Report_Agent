@@ -26,6 +26,13 @@ class AssetType(str, enum.Enum):
     # 수치라 bp로 정규화하면 의미가 없다. 두 asset_type을 분리해 각자 원단위
     # 그대로 저장하고, app/ingestion/quality.py의 상식범위도 asset_type별로 갈린다.
     MACRO_INDEX = "MACRO_INDEX"
+    # GDP·CPI·산업생산·고용 같은 거시경제 지표(레짐 분류기, Phase 3-1 입력).
+    # MACRO_INDEX(스프레드 -10~200 수준)와도 성격이 다르다 — 이쪽은 지수
+    # 레벨값(CPI 300대, 산업생산 100대)이거나 절대수치(고용자수 15만~16만
+    # 천명 단위)라 상식범위·이상치 폭이 자릿수부터 다르다. 원단위 그대로
+    # 저장하고(bp 정규화 없음), quality.py에 별도 (asset_type, currency)
+    # 키를 둔다.
+    MACRO_ECONOMIC = "MACRO_ECONOMIC"
 
 
 class DimAsset(Base):

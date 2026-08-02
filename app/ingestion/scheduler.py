@@ -16,6 +16,9 @@ Cloudflare Tunnel로 상시 노출되는 로컬 PC에서 사람 개입 없이 �
     공시되므로 매일 조회하면 API 쿼터만 소모한다. 다만 신규 보고서가 뜨는
     시점을 너무 늦게 잡으면 안 되므로 주 1회로 둔다. 일간 job과 10분 어긋나게
     배치해 동시 실행을 피한다.
+  - 주간(월 07:50 KST): 거시경제 지표(GDP·CPI·산업생산·고용). 월간·분기
+    발표라 매일 조회하면 API 쿼터만 소모한다 — DART와 같은 근거로 주 1회.
+    07:40(DART)과도 겹치지 않게 10분 더 어긋나게 배치한다.
 
 각 job은 이미 track_ingestion_run으로 성공/실패를 ingestion_run 테이블에
 기록하므로, 여기서는 실패해도 다음 job 실행을 막지 않도록 개별적으로 감싸고
@@ -37,6 +40,7 @@ from app.ingestion.jobs import (
     ingest_financial_statements,
     ingest_global_rates,
     ingest_korean_equity_prices,
+    ingest_macro_indicators,
     ingest_macro_rates,
 )
 from app.ingestion.quality import run_quality_gate
@@ -52,8 +56,12 @@ _DAILY_JOBS = (
     ingest_global_rates.run,
 )
 
-# 사업보고서는 연 1회 공시 — 위 docstring의 주기 설계 근거 참고.
-_WEEKLY_JOBS = (ingest_financial_statements.run,)
+# 사업보고서는 연 1회 공시, 거시경제 지표는 월간·분기 발표 — 위 docstring의
+# 주기 설계 근거 참고. 서로 다른 시각(07:40/07:50)에 배치해 동시 실행을 피한다.
+_WEEKLY_JOBS = (
+    (ingest_financial_statements.run, 40),
+    (ingest_macro_indicators.run, 50),
+)
 
 
 def _run_job_safely(job) -> None:
@@ -120,13 +128,13 @@ def create_scheduler() -> AsyncIOScheduler:
         misfire_grace_time=3600,
     )
 
-    for job in _WEEKLY_JOBS:
+    for job, minute in _WEEKLY_JOBS:
         scheduler.add_job(
             _run_job_safely,
             trigger="cron",
             day_of_week="mon",
             hour=7,
-            minute=40,
+            minute=minute,
             args=[job],
             id=job.__module__,
             misfire_grace_time=3600,

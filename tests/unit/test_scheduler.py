@@ -14,6 +14,7 @@ def test_create_scheduler_registers_all_ingestion_jobs_except_unimplemented():
         "app.ingestion.jobs.ingest_korean_equity_prices",
         "app.ingestion.jobs.ingest_global_rates",
         "app.ingestion.jobs.ingest_financial_statements",
+        "app.ingestion.jobs.ingest_macro_indicators",
         "quality_gate",
     }
     # 부동산 실거래 job은 NotImplementedError를 던지는 스텁이라 스케줄에서 제외된다.
@@ -46,6 +47,19 @@ def test_financial_statements_is_scheduled_weekly_not_daily():
     assert fields["hour"] == "7"
     # 일간 job(07:30)과 겹치지 않게 어긋나 있어야 한다
     assert fields["minute"] == "40"
+
+
+def test_macro_indicators_is_scheduled_weekly_offset_from_financial_statements():
+    """거시경제 지표는 월간·분기 발표라 DART와 같은 근거로 주간이어야 한다
+    (scheduler.py docstring 참고). 07:40(DART)과 겹치지 않게 07:50이어야 한다."""
+    scheduler = create_scheduler()
+    job = scheduler.get_job("app.ingestion.jobs.ingest_macro_indicators")
+
+    assert job is not None
+    fields = {f.name: str(f) for f in job.trigger.fields}
+    assert fields["day_of_week"] == "mon"
+    assert fields["hour"] == "7"
+    assert fields["minute"] == "50"
 
 
 def test_daily_jobs_run_every_day_at_0730():
