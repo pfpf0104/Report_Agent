@@ -11,6 +11,7 @@ import numpy as np
 import pytest
 
 from app.computation.risk.cross_asset import (
+    _default_representative_assets,
     build_cross_asset_correlation,
     build_cross_asset_report_context,
 )
@@ -149,18 +150,26 @@ def test_correlation_is_symmetric(db):
     np.testing.assert_allclose(matrix, matrix.T, atol=1e-12)
 
 
-def test_report_context_returns_pending_shape_when_unavailable(db):
-    """기본 REPRESENTATIVE_ASSETS(SPY/114260/005930)는 실제 운영 DB에 이미
-    데이터가 있어 이 테스트로는 보류 상태를 재현할 수 없다 — 존재하지 않는
-    코드로 대체해 이력 없음 경로를 확인한다."""
-    from app.computation.risk import cross_asset as cross_asset_module
+def test_default_representative_assets_stays_in_sync_with_each_report(db):
+    """대표 자산 코드는 각 리포트 모듈이 실제로 쓰는 벤치마크 상수를 직접
+    참조해야 한다 — 문자열로 다시 하드코딩하면 리포트 쪽 벤치마크가 바뀌었을
+    때 이 페이지가 조용히 낡은 자산을 계속 보여준다."""
+    from app.computation.quant.ridge_sector_rank import PERFORMANCE_BENCHMARK
+    from app.computation.valuation.residual_income_model import STOCK_CODE
+    from app.ingestion.jobs.ingest_korean_equity_prices import BOND_ETF_LONG
 
-    original = cross_asset_module.REPRESENTATIVE_ASSETS
-    cross_asset_module.REPRESENTATIVE_ASSETS = {c: c for c in CODES}
-    try:
-        ctx = build_cross_asset_report_context(db, date(2026, 8, 1))
-    finally:
-        cross_asset_module.REPRESENTATIVE_ASSETS = original
+    codes = set(_default_representative_assets().keys())
+
+    assert codes == {PERFORMANCE_BENCHMARK, BOND_ETF_LONG, STOCK_CODE["삼성전자"]}
+
+
+def test_report_context_returns_pending_shape_when_unavailable(db):
+    """기본 대표 자산(SPY/114260/005930)은 실제 운영 DB에 이미 데이터가 있어
+    이 테스트로는 보류 상태를 재현할 수 없다 — asset_codes로 존재하지 않는
+    코드를 대신 넣어 이력 없음 경로를 확인한다."""
+    ctx = build_cross_asset_report_context(
+        db, date(2026, 8, 1), asset_codes={c: c for c in CODES}
+    )
 
     assert ctx["cross_asset_available"] is False
     assert "cross_asset_data_status" in ctx
@@ -173,17 +182,14 @@ def test_report_context_returns_full_shape_when_available(db):
     for i, code in enumerate(CODES):
         _seed(db, code, dates, _price_path(n, 400 + i))
 
-    from app.computation.risk import cross_asset as cross_asset_module
-
-    original = cross_asset_module.REPRESENTATIVE_ASSETS
-    cross_asset_module.REPRESENTATIVE_ASSETS = {c: c for c in CODES}
-    try:
-        ctx = build_cross_asset_report_context(db, dates[-1])
-    finally:
-        cross_asset_module.REPRESENTATIVE_ASSETS = original
+    ctx = build_cross_asset_report_context(db, dates[-1], asset_codes={c: c for c in CODES})
 
     assert ctx["cross_asset_available"] is True
     assert len(ctx["cross_asset_table_rows"]) == len(CODES)
     assert all(len(row) == len(CODES) + 1 for row in ctx["cross_asset_table_rows"])
     assert ctx["cross_asset_heatmap_chart_uri"].startswith("data:image/png;base64,")
-    assert "레짐" in ctx["cross_asset_disclosure"] or "상관" in ctx["cross_asset_disclosure"]
+    assert "레짐" in ctx["cross_asset_disclosure"]
+    # 이 페이지가 다루는 자산이 몇 개뿐인지(전체 크로스에셋 분석이 아니라는
+    # 사실)를 명시해야 한다 — "CROSS-ASSET VIEW"라는 제목만 보고 독자가
+    # 포괄적인 분석으로 오인하지 않게.
+    assert str(len(CODES)) in ctx["cross_asset_disclosure"]

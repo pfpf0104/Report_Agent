@@ -28,15 +28,25 @@ from sqlalchemy.orm import Session
 
 from app.computation.risk.report_context import MIN_BACKTEST_OBSERVATIONS, load_price_history
 
-# 리포트별 대표 자산 하나씩 — 각 리포트 성과 페이지의 벤치마크와 동일하다.
-#   CallRank: PERFORMANCE_BENCHMARK(ridge_sector_rank.py)
-#   MetroGuard: BOND_ETF_LONG(ingest_korean_equity_prices.py) — D_LONG=3년 상한
-#   밸류에이션: 005930(삼성전자) — STOCK_CODE(residual_income_model.py)
-REPRESENTATIVE_ASSETS: dict[str, str] = {
-    "SPY": "CallRank(미국 섹터 벤치마크)",
-    "114260": "MetroGuard(국고채3년)",
-    "005930": "밸류에이션(삼성전자)",
-}
+def _default_representative_assets() -> dict[str, str]:
+    """리포트별 대표 자산 하나씩 — 각 리포트 성과 페이지의 벤치마크와 동일하다.
+
+    문자열을 여기 다시 하드코딩하지 않고 각 리포트 모듈의 실제 상수를
+    그대로 참조한다 — 그 리포트의 벤치마크가 바뀌면(예: MetroGuard가 다른
+    만기의 채권으로 벤치마크를 바꾸면) 이 페이지도 자동으로 따라간다. 세
+    모듈(ridge_sector_rank/ingest_korean_equity_prices/residual_income_model)이
+    전부 cross_asset을 import하므로, 반대 방향 import는 함수 내부에서 지연
+    수행해 순환 참조를 피한다.
+    """
+    from app.computation.quant.ridge_sector_rank import PERFORMANCE_BENCHMARK
+    from app.computation.valuation.residual_income_model import STOCK_CODE
+    from app.ingestion.jobs.ingest_korean_equity_prices import BOND_ETF_LONG
+
+    return {
+        PERFORMANCE_BENCHMARK: "CallRank(미국 섹터 벤치마크)",
+        BOND_ETF_LONG: "MetroGuard(국고채3년)",
+        STOCK_CODE["삼성전자"]: "밸류에이션(삼성전자)",
+    }
 
 # 최소 자산 2개는 있어야 상관을 정의할 수 있다.
 MIN_CROSS_ASSET_ASSETS = 2
@@ -65,11 +75,11 @@ def build_cross_asset_correlation(
 ) -> CrossAssetContext:
     """asset_codes(코드→표시 라벨)의 일간 수익률 상관행렬을 실측으로 계산한다.
 
-    생략하면 REPRESENTATIVE_ASSETS(3개 리포트 대표 자산)를 쓴다. 이력이
-    부족하면(자산 2개 미만 확보, 최소 관측치 미달) 숫자를 만들어내지 않고
-    보류 컨텍스트를 반환한다 — 성과 페이지와 동일한 원칙.
+    생략하면 _default_representative_assets()(3개 리포트 대표 자산)를 쓴다.
+    이력이 부족하면(자산 2개 미만 확보, 최소 관측치 미달) 숫자를 만들어내지
+    않고 보류 컨텍스트를 반환한다 — 성과 페이지와 동일한 원칙.
     """
-    universe = asset_codes or REPRESENTATIVE_ASSETS
+    universe = asset_codes or _default_representative_assets()
     codes = list(universe.keys())
     history = load_price_history(db, as_of, codes)
 
@@ -100,9 +110,16 @@ def build_cross_asset_correlation(
     )
 
 
-def build_cross_asset_report_context(db: Session, as_of: date) -> dict:
-    """report_context 계열과 동일한 dict-반환 컨벤션 — Jinja 템플릿에 그대로 풀어 쓴다."""
-    ctx = build_cross_asset_correlation(db, as_of)
+def build_cross_asset_report_context(
+    db: Session, as_of: date, asset_codes: dict[str, str] | None = None
+) -> dict:
+    """report_context 계열과 동일한 dict-반환 컨벤션 — Jinja 템플릿에 그대로 풀어 쓴다.
+
+    asset_codes는 테스트에서 대표 자산을 격리된 코드로 바꿔치기할 때 쓴다
+    (운영 DB에 이미 SPY/114260/005930 데이터가 있어 기본값으로는 보류 경로를
+    재현할 수 없다).
+    """
+    ctx = build_cross_asset_correlation(db, as_of, asset_codes)
     if not ctx.available:
         return {
             "cross_asset_available": False,
@@ -125,9 +142,12 @@ def build_cross_asset_report_context(db: Session, as_of: date) -> dict:
         "cross_asset_table_rows": rows,
         "cross_asset_heatmap_chart_uri": correlation_heatmap(ctx.labels, ctx.correlation),
         "cross_asset_disclosure": (
-            "위 상관계수는 지정된 기간의 실제 일간 수익률로 계산한 통계값이며, "
-            "레짐(성장·인플레이션 국면) 분류나 인과관계를 나타내지 않는다. "
-            "상관은 시간에 따라 변하므로 특정 기간의 관측값을 미래에 그대로 "
-            "적용할 수 없다."
+            f"이 페이지는 3개 리포트 각각의 대표 자산 {len(ctx.labels)}종만 다룬다 "
+            f"(비대각 상관계수 {len(ctx.labels) * (len(ctx.labels) - 1) // 2}개) — "
+            "전체 자산군을 아우르는 크로스에셋 분석이 아니라 세 리포트를 잇는 "
+            "최소 연결점이다. 위 상관계수는 지정된 기간의 실제 일간 수익률로 "
+            "계산한 통계값이며, 레짐(성장·인플레이션 국면) 분류나 인과관계를 "
+            "나타내지 않는다. 상관은 시간에 따라 변하므로 특정 기간의 관측값을 "
+            "미래에 그대로 적용할 수 없다."
         ),
     }
