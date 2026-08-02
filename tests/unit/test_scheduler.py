@@ -12,6 +12,7 @@ def test_create_scheduler_registers_all_ingestion_jobs_except_unimplemented():
         "app.ingestion.jobs.ingest_macro_rates",
         "app.ingestion.jobs.ingest_equity_prices",
         "app.ingestion.jobs.ingest_korean_equity_prices",
+        "app.ingestion.jobs.ingest_global_rates",
         "app.ingestion.jobs.ingest_financial_statements",
         "quality_gate",
     }
@@ -53,6 +54,7 @@ def test_daily_jobs_run_every_day_at_0730():
         "app.ingestion.jobs.ingest_macro_rates",
         "app.ingestion.jobs.ingest_equity_prices",
         "app.ingestion.jobs.ingest_korean_equity_prices",
+        "app.ingestion.jobs.ingest_global_rates",
     ):
         fields = {f.name: str(f) for f in scheduler.get_job(job_id).trigger.fields}
         assert fields["day_of_week"] == "*"

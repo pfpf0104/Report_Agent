@@ -7,7 +7,7 @@ Cloudflare Tunnel로 상시 노출되는 로컬 PC에서 사람 개입 없이 �
 
 주기는 데이터가 실제로 바뀌는 빈도에 맞춘다:
 
-  - 일간(07:30 KST): 시세·매크로 금리. 매 거래일 새 값이 나온다.
+  - 일간(07:30 KST): 시세·매크로 금리(한국·미국). 매 거래일 새 값이 나온다.
   - 일간(07:45 KST): 품질 게이트(app/ingestion/quality.py). 위 인제스천이
     끝난 뒤 실행해야 그날 새로 들어온 데이터가 검사 대상에 포함된다. 오류가
     있으면(단위 이상·스테일·결측) 알림을 보낸다 — 이전에는 사람이 GET
@@ -35,6 +35,7 @@ from app.ingestion.alerting import send_alert
 from app.ingestion.jobs import (
     ingest_equity_prices,
     ingest_financial_statements,
+    ingest_global_rates,
     ingest_korean_equity_prices,
     ingest_macro_rates,
 )
@@ -48,6 +49,7 @@ _DAILY_JOBS = (
     ingest_macro_rates.run,
     ingest_equity_prices.run,
     ingest_korean_equity_prices.run,
+    ingest_global_rates.run,
 )
 
 # 사업보고서는 연 1회 공시 — 위 docstring의 주기 설계 근거 참고.

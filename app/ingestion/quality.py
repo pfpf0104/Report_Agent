@@ -63,8 +63,17 @@ WARNING = "warning"
 # 자리에 넣는" 오류인데, 하한이 0이면 2.659가 범위 안에 들어가 검사를 통과해
 # 버린다(테스트로 실제 확인함). 국고채 금리가 0.1%를 밑도는 상황은 현실적으로
 # 없으므로, 10bp 미만은 실제 저금리보다 단위 오류일 가능성이 압도적이다.
+# MACRO_INDEX(스프레드·지수, USD)는 원단위 그대로 저장한다(위 AssetType
+# docstring 참고). 스프레드(T10Y2Y 등)는 금리곡선 역전 시 음수가 될 수 있어
+# 하한을 음수로 열어둔다 — MACRO(bp, 항상 양수)와 반대다. 지수(달러인덱스)는
+# 100 안팎이라 상한도 훨씬 낮다. 이 asset_type 안에 스프레드(-5~15)와 지수
+# (50~200)가 섞여 있어 상식범위를 넓게 잡는다 — 목적이 정밀한 이상치 탐지가
+# 아니라 "자릿수가 완전히 틀렸는가"(예: bp로 착각해 ×100 되어 있는가)이므로
+# 이 정도 폭이면 충분하다.
 PLAUSIBLE_RANGES: dict[tuple[str, str], tuple[float, float]] = {
     (AssetType.MACRO.value, "KRW"): (10.0, 2000.0),
+    (AssetType.MACRO.value, "USD"): (-500.0, 2000.0),
+    (AssetType.MACRO_INDEX.value, "USD"): (-10.0, 200.0),
     (AssetType.EQUITY.value, "KRW"): (100.0, 10_000_000.0),
     (AssetType.EQUITY.value, "USD"): (0.1, 100_000.0),
     (AssetType.ETF.value, "KRW"): (1.0, 1_000_000.0),
@@ -74,7 +83,8 @@ PLAUSIBLE_RANGES: dict[tuple[str, str], tuple[float, float]] = {
 # 위 매핑에 (asset_type, currency) 조합이 없을 때 쓰는 대체 범위 — 새 통화가
 # 추가돼도 검사 자체가 조용히 스킵되지 않게 한다.
 _FALLBACK_RANGE: dict[str, tuple[float, float]] = {
-    AssetType.MACRO.value: (10.0, 2000.0),
+    AssetType.MACRO.value: (-500.0, 2000.0),
+    AssetType.MACRO_INDEX.value: (-10.0, 200.0),
     AssetType.EQUITY.value: (0.1, 10_000_000.0),
     AssetType.ETF.value: (0.1, 1_000_000.0),
 }
@@ -86,12 +96,35 @@ _PERCENT_LOOKING_BP_THRESHOLD = 100.0
 # 일간 변동 임계치(%). 넘으면 이상치로 본다. 실제로 발생 가능한 폭(2020년 3월 등)을
 # 감안해 "불가능"이 아니라 "확인 필요" 수준으로 잡는다.
 MAX_DAILY_MOVE_PCT: dict[str, float] = {
-    AssetType.MACRO.value: 25.0,
     AssetType.EQUITY.value: 35.0,
     AssetType.ETF.value: 25.0,
 }
 
+# MACRO/MACRO_INDEX는 상대변동%이 아니라 절대변동으로 이상치를 본다.
+#
+# MACRO_INDEX(스프레드·지수, T10Y2Y 등)는 0 근처를 오가는 %p 값이라, 절대값이
+# 작을 때 상대변동%이 수백~수천%로 발산해 매일 오탐이 난다(2026-08 실측:
+# US10Y2Y가 0.04→-0.05로 9bp만 움직였는데 상대변동은 225%로 잡혀 222건의
+# 경고가 쏟아졌다 — 알림 시스템이 이걸 실제로 매일 전송하게 됐을 것이다).
+#
+# MACRO(금리, bp)도 같은 문제를 겪는다 — 저금리 구간(예: 2021년 US1MO
+# 3~10bp)에서는 1bp 변화만으로 상대변동%이 30~50%로 튄다(같은 실측에서
+# 65건 확인). 두 asset_type 모두 절대변동 임계치(저장 단위 그대로 — 금리는
+# bp, 스프레드는 %p, 지수는 포인트)로 통일한다.
+MAX_DAILY_MOVE_ABS: dict[str, float] = {
+    AssetType.MACRO.value: 50.0,  # 금리(bp) — 하루 50bp 이상 변화면 확인 필요
+    AssetType.MACRO_INDEX.value: 3.0,  # 스프레드(%p)·지수(포인트) 공통 — 하루 3 단위 이상 변화면 확인 필요
+}
+
 STALE_AFTER_DAYS = 7  # 주말·공휴일 연휴를 감안한 기본값
+
+# 자산코드별 스테일 임계 예외. 연준 H.10(달러지수) 발표 자체가 실측으로 확인한
+# 결과 며칠 지연된다(2026-08 실측: DTWEXBGS observation_end가 조회일 대비
+# 9일 전 — FRED API 응답 메타데이터로 확인, 인제스천 실패가 아니라 발표
+# 스케줄의 정상적인 특성). 기본 7일로는 매일 오탐이 나 15일로 넉넉히 둔다.
+STALE_AFTER_DAYS_OVERRIDE: dict[str, int] = {
+    "USDINDEX": 15,
+}
 
 
 @dataclass(frozen=True)
@@ -203,19 +236,33 @@ def check_outliers(asset: DimAsset, rows: list[FactMarketDaily]) -> list[Quality
     if len(closes) < 2:
         return []
 
-    threshold = MAX_DAILY_MOVE_PCT.get(asset.asset_type, 50.0)
     issues = []
-    for (_, prev), (d, cur) in zip(closes, closes[1:]):
-        if prev == 0:
-            continue
-        move = abs(cur / prev - 1) * 100
-        if move > threshold:
-            issues.append(
-                QualityIssue(
-                    WARNING, "outlier", asset.code,
-                    f"{d} 일간 변동 {move:.1f}% (임계 {threshold:.0f}%) — {prev:,.4f} → {cur:,.4f}",
+    if asset.asset_type in MAX_DAILY_MOVE_ABS:
+        # 스프레드·지수(MACRO_INDEX): 0 근처를 오가는 값이라 상대변동%은
+        # 발산한다 — 절대변동으로 본다.
+        threshold = MAX_DAILY_MOVE_ABS[asset.asset_type]
+        for (_, prev), (d, cur) in zip(closes, closes[1:]):
+            move = abs(cur - prev)
+            if move > threshold:
+                issues.append(
+                    QualityIssue(
+                        WARNING, "outlier", asset.code,
+                        f"{d} 일간 변동 {move:+.2f} (임계 {threshold:.1f}) — {prev:,.4f} → {cur:,.4f}",
+                    )
                 )
-            )
+    else:
+        threshold = MAX_DAILY_MOVE_PCT.get(asset.asset_type, 50.0)
+        for (_, prev), (d, cur) in zip(closes, closes[1:]):
+            if prev == 0:
+                continue
+            move = abs(cur / prev - 1) * 100
+            if move > threshold:
+                issues.append(
+                    QualityIssue(
+                        WARNING, "outlier", asset.code,
+                        f"{d} 일간 변동 {move:.1f}% (임계 {threshold:.0f}%) — {prev:,.4f} → {cur:,.4f}",
+                    )
+                )
     return issues
 
 
@@ -268,7 +315,8 @@ def run_quality_gate(
         if missing:
             continue  # 데이터가 없으면 나머지 검사는 의미 없다
 
-        report.issues.extend(check_staleness(asset, rows, as_of))
+        stale_threshold = STALE_AFTER_DAYS_OVERRIDE.get(asset.code, STALE_AFTER_DAYS)
+        report.issues.extend(check_staleness(asset, rows, as_of, stale_threshold))
         report.issues.extend(check_value_range(asset, rows))
         report.issues.extend(check_outliers(asset, rows))
         report.issues.extend(check_missing_business_days(asset, rows))

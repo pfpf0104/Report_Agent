@@ -23,6 +23,7 @@ def test_all_backfill_jobs_are_registered():
     것 외에는 재실행할 방법이 없어진다."""
     expected = {
         "backfill_macro_rates",
+        "backfill_global_rates",
         "backfill_equity_prices",
         "backfill_korean_equity_prices",
         "backfill_financial_statements",
@@ -31,7 +32,10 @@ def test_all_backfill_jobs_are_registered():
 
 
 def test_daily_jobs_still_registered():
-    expected = {"equity_prices", "korean_equity_prices", "macro_rates", "financial_statements", "real_estate_deals"}
+    expected = {
+        "equity_prices", "korean_equity_prices", "macro_rates", "global_rates",
+        "financial_statements", "real_estate_deals",
+    }
     assert expected <= set(ingestion_router._JOBS.keys())
 
 

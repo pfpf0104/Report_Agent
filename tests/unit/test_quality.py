@@ -21,7 +21,7 @@ from app.ingestion.quality import (
     run_quality_gate,
 )
 
-CODES = ["TESTKTB3Y", "TESTEQ", "TESTETF", "TESTKRWETF", "TESTUSDETF"]
+CODES = ["TESTKTB3Y", "TESTEQ", "TESTETF", "TESTKRWETF", "TESTUSDETF", "TESTSPREAD", "TESTINDEX"]
 
 
 @pytest.fixture()
@@ -109,6 +109,37 @@ def test_value_range_accepts_correctly_scaled_bp(db):
     assert check_value_range(asset, _rows(db, asset)) == []
 
 
+def test_value_range_accepts_negative_spread_for_macro_index(db):
+    """MACRO_INDEX(스프레드)는 금리곡선 역전 시 음수가 될 수 있다(예: T10Y2Y)
+    — MACRO(금리, 항상 양수)와 반대로 하한이 음수여야 정상값을 오탐하지
+    않는다."""
+    asset = _asset(db, "TESTSPREAD", AssetType.MACRO_INDEX.value, currency="USD")
+    _add(db, asset, date(2026, 7, 30), -1.5)  # 역전된 금리곡선 스프레드
+
+    assert check_value_range(asset, _rows(db, asset)) == []
+
+
+def test_value_range_accepts_dollar_index_scale_for_macro_index(db):
+    """달러지수(DTWEXBGS) 같은 무차원 지수는 100 안팎이라 MACRO(bp, 수백대)
+    범위와 자릿수 자체가 다르다."""
+    asset = _asset(db, "TESTINDEX", AssetType.MACRO_INDEX.value, currency="USD")
+    _add(db, asset, date(2026, 7, 30), 120.71)
+
+    assert check_value_range(asset, _rows(db, asset)) == []
+
+
+def test_value_range_catches_macro_index_off_by_orders_of_magnitude(db):
+    """MACRO_INDEX도 완전히 틀린 자릿수(예: bp로 착각해 100배 부풀린 값)는
+    여전히 잡아야 한다 — 범위를 넓힌 것이 검사 무력화를 뜻하지 않는다."""
+    asset = _asset(db, "TESTINDEX", AssetType.MACRO_INDEX.value, currency="USD")
+    _add(db, asset, date(2026, 7, 30), 12_071.0)  # 120.71을 100배 부풀린 상태
+
+    issues = check_value_range(asset, _rows(db, asset))
+
+    assert len(issues) == 1
+    assert issues[0].severity == ERROR
+
+
 def test_value_range_catches_equity_price_off_by_orders_of_magnitude(db):
     """삼성전자 주가가 원 단위가 아니라 천원 단위로 들어온 경우 등."""
     asset = _asset(db, "TESTEQ", AssetType.EQUITY.value)
@@ -159,6 +190,54 @@ def test_outlier_survives_zero_previous_close_without_dividing_by_zero(db):
     _add(db, asset, date(2026, 7, 29), 0.0)
     _add(db, asset, date(2026, 7, 30), 200_000)
     check_outliers(asset, _rows(db, asset))  # ZeroDivisionError가 나면 실패
+
+
+def test_outlier_uses_absolute_move_for_macro_spread_near_zero(db):
+    """MACRO_INDEX(스프레드류, T10Y2Y 등)는 0 근처를 오가는 %p 값이라 상대변동%을
+    쓰면 절대값이 작을 때 발산한다 — 2026-08 실측: 0.04→-0.05(9bp 변화)가
+    상대변동 225%로 잡혀 매일 오탐이 났다. 절대변동으로 봐야 정상 변동을
+    이상치로 오판하지 않는다."""
+    asset = _asset(db, "TESTSPREAD", AssetType.MACRO_INDEX.value, currency="USD")
+    _add(db, asset, date(2026, 7, 29), 0.04)
+    _add(db, asset, date(2026, 7, 30), -0.05)  # 절대변동 0.09 — 임계(3.0) 이내
+
+    assert check_outliers(asset, _rows(db, asset)) == []
+
+
+def test_outlier_flags_large_absolute_move_for_macro_spread(db):
+    asset = _asset(db, "TESTSPREAD", AssetType.MACRO_INDEX.value, currency="USD")
+    _add(db, asset, date(2026, 7, 29), 0.5)
+    _add(db, asset, date(2026, 7, 30), 4.0)  # 절대변동 3.5 — 임계(3.0) 초과
+
+    issues = check_outliers(asset, _rows(db, asset))
+
+    assert len(issues) == 1
+    assert issues[0].severity == WARNING
+    assert "+3.50" in issues[0].detail
+
+
+def test_outlier_uses_absolute_move_for_macro_rate_at_low_bp_level(db):
+    """MACRO(금리, bp)도 저금리 구간에서는 절대값이 작아 상대변동%이 발산한다
+    — 2026-08 실측: 2021년 US1MO가 3~10bp대에서 1bp만 움직여도 상대변동
+    30~50%로 잡혀 65건의 오탐이 났다."""
+    asset = _asset(db, "TESTKTB3Y", AssetType.MACRO.value)
+    _add(db, asset, date(2026, 7, 29), 5.0)
+    _add(db, asset, date(2026, 7, 30), 7.0)  # 절대변동 2bp — 임계(50bp) 이내, 상대변동은 40%
+
+    assert check_outliers(asset, _rows(db, asset)) == []
+
+
+def test_outlier_flags_large_absolute_move_for_macro_rate(db):
+    """실제 정책금리 급변동(2022년 연준 75bp 자이언트스텝)은 여전히 잡혀야
+    한다 — 범위를 절대변동으로 바꾼 것이 검사 무력화를 뜻하지 않는다."""
+    asset = _asset(db, "TESTKTB3Y", AssetType.MACRO.value)
+    _add(db, asset, date(2026, 7, 29), 158.0)
+    _add(db, asset, date(2026, 7, 30), 233.0)  # 절대변동 75bp — 임계(50bp) 초과
+
+    issues = check_outliers(asset, _rows(db, asset))
+
+    assert len(issues) == 1
+    assert issues[0].severity == WARNING
 
 
 # --- 결측 ---
@@ -213,3 +292,22 @@ def test_gate_passes_on_clean_data(db):
     report = run_quality_gate(db, as_of=d, asset_codes=["TESTEQ"])
     assert report.ok, [str(i) for i in report.issues]
     assert "이상 없음" in report.summary()
+
+
+def test_gate_uses_staleness_override_for_specific_assets(db, monkeypatch):
+    """USDINDEX(연준 달러지수)는 발표 자체가 실측으로 확인한 결과 며칠 지연되므로
+    기본 7일 임계값이 아니라 15일을 쓴다 — 2026-08 실측: observation_end가
+    조회일보다 9일 전이라 기본 임계값으로는 매일 오탐이 났다. 실제 코드
+    "USDINDEX"는 운영 자산이라(unique 제약) 격리된 코드로 오버라이드
+    매핑에 임시로 추가해 검증한다."""
+    import app.ingestion.quality as quality_module
+
+    monkeypatch.setitem(quality_module.STALE_AFTER_DAYS_OVERRIDE, "TESTINDEX", 15)
+
+    asset = _asset(db, "TESTINDEX", AssetType.MACRO_INDEX.value, currency="USD")
+    as_of = date(2026, 8, 2)
+    _add(db, asset, as_of - timedelta(days=9), 120.71)  # 9일 경과 — 기본 7일 초과
+
+    report = run_quality_gate(db, as_of=as_of, asset_codes=["TESTINDEX"])
+
+    assert report.ok, [str(i) for i in report.issues]

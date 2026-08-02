@@ -1,22 +1,26 @@
-"""TODO(실데이터 연동): predicted_change_bp를 실제 City AI로 교체.
+"""City AI 스텁 — G4 부분 해소: predicted_change_bp도 이제 실측 PCA-Ridge 모델을 우선한다.
 
 City AI는 한국 금리곡선(19개 입력)·글로벌 금리(21개)·미국 전국 주택(3개)·
 미국 도시 주택(6개), 총 49개 입력을 60개월 워크포워드로 매월 처음부터
 재적합하고, PCA-8 압축 후 penalty λ=10 고정 Ridge로 향후 63거래일 한국
-3년 금리변화를 예측한다(첨부 MetroGuard-KR 보고서 7페이지). 이 예측
-모델(PCA-Ridge)을 재현하려면 FRED 글로벌 금리, Zillow ZHVI 실데이터가
-추가로 필요하므로 predicted_change_bp는 여전히 결정적 시드 합성값이다
-(ingestion 연동 대기).
+3년 금리변화를 예측한다(첨부 MetroGuard-KR 보고서 7페이지).
 
-yield_1y_bp/yield_3y_bp(현재 금리커브)는 실측으로 교체했다 — 이건 "예측"이
-아니라 "지금 알려진 값"이라 BOK ECOS(ingest_macro_rates.py, KTB1Y/KTB3Y)가
-이미 매일 채우고 있다. DB에 해당 as_of 시점 값이 없으면(백필 전 구간·주말 등)
-합성값으로 폴백한다 — RIM의 KIS 현재가/DART BPS와 동일한 실측 우선 패턴이다.
+app/computation/fixed_income/global_rate_model.py가 이 방법론(표준화→PCA-8→
+Ridge λ=10)을 한국 금리 2개 + 미국 금리곡선·매크로 지표 15개(총 17개 입력,
+원본의 49개에는 못 미침 — 주택 지표는 아직 미소싱)로 실제 구현했다. 이
+함수는 그 모델을 우선 호출하고, 실패하면(이력 부족·자산 없음) 합성값으로
+폴백한다 — RIM의 KIS 현재가/DART BPS와 동일한 실측 우선 패턴이다.
+
+yield_1y_bp/yield_3y_bp(현재 금리커브)도 같은 원칙 — 이건 "예측"이 아니라
+"지금 알려진 값"이라 BOK ECOS(ingest_macro_rates.py, KTB1Y/KTB3Y)가 이미
+매일 채우고 있다. DB에 해당 as_of 시점 값이 없으면(백필 전 구간·주말 등)
+합성값으로 폴백한다.
 
 단위 규약(G13): fact_market_daily에 저장된 KTB1Y/KTB3Y는 bp다
-(ingest_macro_rates.py가 BOK의 %를 ×100 정규화). 이 함수가 반환하는
-yield_1y_bp/yield_3y_bp도 항상 bp다 — 폴백이든 실측이든 단위가 갈리지
-않도록 이 파일 하나에서 정규화 책임을 진다.
+(ingest_macro_rates.py가 BOK의 %를 ×100 정규화). global_rate_model.py가
+반환하는 predicted_change_bp도 같은 단위(bp)다 — 학습 타깃 자체가
+"KTB3Y(bp) 변화량"이라 별도 변환이 필요 없다. 이 함수가 반환하는 세 값
+모두 폴백이든 실측이든 항상 bp다.
 """
 from __future__ import annotations
 
@@ -63,6 +67,15 @@ def synthetic_city_ai_output(db: Session | None, as_of: date, seed: int | None =
             yield_1y_bp = real_1y
         if real_3y is not None:
             yield_3y_bp = real_3y
+
+        # G4 부분 해소: PCA-Ridge 모델이 실제 예측을 낼 수 있으면 그걸 쓴다.
+        # 지연 import — city_ai_stub이 계산 계층 최하단(순환 위험 최소화 대상)
+        # 이라 global_rate_model을 모듈 로드 시점에 끌어오지 않는다.
+        from app.computation.fixed_income.global_rate_model import predict_change_bp
+
+        real_prediction = predict_change_bp(db, as_of)
+        if real_prediction is not None:
+            predicted_change_bp = real_prediction
 
     return {
         "yield_1y_bp": float(yield_1y_bp),
