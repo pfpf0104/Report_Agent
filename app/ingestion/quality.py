@@ -46,20 +46,37 @@ from app.db.point_in_time import visible_as_of
 ERROR = "error"
 WARNING = "warning"
 
-# 자산유형별 상식 범위. 단위 오류(100배·소수점 위치)를 잡는 것이 목적이므로
+# 자산유형×통화별 상식 범위. 단위 오류(100배·소수점 위치)를 잡는 것이 목적이므로
 # 정밀한 밸류에이션 기준이 아니라 "자릿수가 맞는가" 수준으로 잡는다.
 #
+# 통화를 함께 키로 두는 이유: KRW 표시 자산(원화 액면가가 커서 좌수당 5~10만원대가
+# 흔함 — 예: 통안채1년 ETF 122260이 103,960원)과 USD 표시 자산(XLE $59, SPY $747)을
+# 같은 상한으로 묶으면 정상적인 KRW 가격이 상한을 넘어 오탐(false positive)이
+# 난다(2026-08 실측: 122260 종가 101,230원이 옛 ETF 상한 100,000을 넘어 매일
+# ERROR로 잡히던 것을 실제 알림에서 확인하고 수정).
+#
 # MACRO는 이 프로젝트에서 국고채 금리를 담으며, 단위 규약은 **베이시스포인트**다
-# (duration_controller의 yield_*_bp 파라미터와 맞춘다).
+# (duration_controller의 yield_*_bp 파라미터와 맞춘다). 금리는 통화별로 자릿수가
+# 갈리지 않으므로 KRW 키 하나만 둔다(현재 국고채만 취급).
 #
 # 하한을 0이 아니라 10bp로 둔 이유: 잡으려는 것이 바로 "퍼센트 값(2.659)을 bp
 # 자리에 넣는" 오류인데, 하한이 0이면 2.659가 범위 안에 들어가 검사를 통과해
 # 버린다(테스트로 실제 확인함). 국고채 금리가 0.1%를 밑도는 상황은 현실적으로
 # 없으므로, 10bp 미만은 실제 저금리보다 단위 오류일 가능성이 압도적이다.
-PLAUSIBLE_RANGES: dict[str, tuple[float, float]] = {
+PLAUSIBLE_RANGES: dict[tuple[str, str], tuple[float, float]] = {
+    (AssetType.MACRO.value, "KRW"): (10.0, 2000.0),
+    (AssetType.EQUITY.value, "KRW"): (100.0, 10_000_000.0),
+    (AssetType.EQUITY.value, "USD"): (0.1, 100_000.0),
+    (AssetType.ETF.value, "KRW"): (1.0, 1_000_000.0),
+    (AssetType.ETF.value, "USD"): (0.1, 100_000.0),
+}
+
+# 위 매핑에 (asset_type, currency) 조합이 없을 때 쓰는 대체 범위 — 새 통화가
+# 추가돼도 검사 자체가 조용히 스킵되지 않게 한다.
+_FALLBACK_RANGE: dict[str, tuple[float, float]] = {
     AssetType.MACRO.value: (10.0, 2000.0),
-    AssetType.EQUITY.value: (100.0, 10_000_000.0),
-    AssetType.ETF.value: (1.0, 100_000.0),
+    AssetType.EQUITY.value: (0.1, 10_000_000.0),
+    AssetType.ETF.value: (0.1, 1_000_000.0),
 }
 
 # 이 값보다 작으면 "퍼센트를 bp 자리에 넣었다"는 조치 힌트를 붙인다
@@ -154,8 +171,10 @@ def check_staleness(
 
 
 def check_value_range(asset: DimAsset, rows: list[FactMarketDaily]) -> list[QualityIssue]:
-    """자산유형별 상식 범위를 벗어나는 값 — 단위 오류를 잡는 핵심 검사."""
-    bounds = PLAUSIBLE_RANGES.get(asset.asset_type)
+    """자산유형×통화별 상식 범위를 벗어나는 값 — 단위 오류를 잡는 핵심 검사."""
+    bounds = PLAUSIBLE_RANGES.get((asset.asset_type, asset.currency)) or _FALLBACK_RANGE.get(
+        asset.asset_type
+    )
     if bounds is None or not rows:
         return []
 

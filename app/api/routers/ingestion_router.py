@@ -4,6 +4,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends
 from sqlalchemy.orm import Session
 
 from app.db.base import get_db
+from app.db.models.alert_log import AlertLog
 from app.ingestion.quality import run_quality_gate
 from app.ingestion.jobs import (
     backfill_equity_prices,
@@ -65,4 +66,33 @@ def quality_gate(as_of: date | None = None, db: Session = Depends(get_db)) -> di
         "summary": report.summary(),
         "errors": [str(i) for i in report.errors],
         "warnings": [str(i) for i in report.warnings],
+    }
+
+
+@router.get("/alerts")
+def list_alerts(limit: int = 50, db: Session = Depends(get_db)) -> dict:
+    """job 실패·품질게이트 오류 알림 이력(app/ingestion/alerting.py).
+
+    텔레그램 전송이 실패해도(자격증명 없음, 네트워크 오류 등) 이 테이블에는
+    항상 남는다 — telegram_sent로 실제 전송 여부를 구분해서 본다.
+    """
+    rows = (
+        db.query(AlertLog)
+        .order_by(AlertLog.created_at.desc())
+        .limit(min(limit, 200))
+        .all()
+    )
+    return {
+        "alerts": [
+            {
+                "id": r.id,
+                "category": r.category,
+                "source": r.source,
+                "severity": r.severity,
+                "message": r.message,
+                "telegram_sent": r.telegram_sent,
+                "created_at": r.created_at.isoformat(),
+            }
+            for r in rows
+        ]
     }

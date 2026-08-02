@@ -27,6 +27,11 @@ class Settings(BaseSettings):
     fred_api_key: str | None = None  # FRED(미국 연준) — City AI의 글로벌 금리 입력
     fmp_api_key: str | None = None  # Financial Modeling Prep — 시세·실적발표 transcript
 
+    # 인제스천 실패·품질게이트 알림용(app/ingestion/alerting.py). 비워두면 알림은
+    # DB 기록만 되고 텔레그램 전송은 조용히 스킵된다(R2/Supabase와 동일한 옵션 패턴).
+    telegram_token: str | None = None
+    telegram_chat_id: str | None = None
+
     # .env는 커밋되는 예시/기본값용, .env.local은 실제 비밀값(gitignore 대상)용.
     # 두 파일 다 있으면 .env.local이 나중에 로드되어 .env 값을 덮어쓴다.
     #

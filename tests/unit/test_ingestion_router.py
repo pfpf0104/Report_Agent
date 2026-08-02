@@ -54,3 +54,14 @@ def test_trigger_unknown_job_returns_error_with_known_jobs_list():
     body = response.json()
     assert body["error"] == "unknown job: not_a_real_job"
     assert "backfill_financial_statements" in body["known_jobs"]
+
+
+def test_list_alerts_returns_empty_list_shape_when_no_alerts():
+    """빈 이력이어도 키 자체는 있어야 한다 — 클라이언트가 매번 존재 여부를
+    분기하지 않고 alerts 리스트를 바로 순회할 수 있게."""
+    response = client.get("/ingestion/alerts")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert "alerts" in body
+    assert isinstance(body["alerts"], list)

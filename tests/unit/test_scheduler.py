@@ -13,9 +13,23 @@ def test_create_scheduler_registers_all_ingestion_jobs_except_unimplemented():
         "app.ingestion.jobs.ingest_equity_prices",
         "app.ingestion.jobs.ingest_korean_equity_prices",
         "app.ingestion.jobs.ingest_financial_statements",
+        "quality_gate",
     }
     # 부동산 실거래 job은 NotImplementedError를 던지는 스텁이라 스케줄에서 제외된다.
     assert "app.ingestion.jobs.ingest_real_estate_deals" not in job_ids
+
+
+def test_quality_gate_runs_after_daily_ingestion_jobs():
+    """품질 게이트(07:45)는 일간 인제스천(07:30)보다 늦게 돌아야 그날 새로
+    들어온 데이터가 검사 대상에 포함된다 — Phase 5-3."""
+    scheduler = create_scheduler()
+    job = scheduler.get_job("quality_gate")
+
+    assert job is not None
+    fields = {f.name: str(f) for f in job.trigger.fields}
+    assert fields["day_of_week"] == "*"
+    assert fields["hour"] == "7"
+    assert fields["minute"] == "45"
 
 
 def test_financial_statements_is_scheduled_weekly_not_daily():
@@ -70,3 +84,99 @@ def test_run_job_safely_swallows_exceptions_and_continues():
         raise RuntimeError("boom")
 
     _run_job_safely(failing_job)  # 예외를 삼키고 조용히 로깅만 해야 한다(재발생 안 함)
+
+
+def test_run_job_safely_sends_alert_on_failure(monkeypatch):
+    """job이 실패하면 alert_log에 남아야 한다 — ingestion_run에만 남으면
+    사람이 GET /ingestion/alerts로 확인할 방법이 없다."""
+    import app.ingestion.scheduler as scheduler_module
+
+    calls = []
+    monkeypatch.setattr(
+        scheduler_module, "send_alert",
+        lambda db, category, source, severity, message: calls.append(
+            (category, source, severity, message)
+        ),
+    )
+
+    def failing_job():
+        raise RuntimeError("boom")
+    failing_job.__module__ = "test_module"
+
+    scheduler_module._run_job_safely(failing_job)
+
+    assert len(calls) == 1
+    category, source, severity, message = calls[0]
+    assert category == "job_failure"
+    assert source == "test_module"
+    assert severity == "error"
+    assert "boom" in message
+
+
+def test_run_quality_gate_safely_sends_alert_when_gate_reports_errors(monkeypatch):
+    import app.ingestion.scheduler as scheduler_module
+    from app.ingestion.quality import ERROR, QualityIssue, QualityReport
+
+    calls = []
+    monkeypatch.setattr(
+        scheduler_module, "send_alert",
+        lambda db, category, source, severity, message: calls.append(
+            (category, source, severity, message)
+        ),
+    )
+    bad_report = QualityReport(
+        as_of=__import__("datetime").date.today(),
+        issues=[QualityIssue(ERROR, "value_range", "KTB1Y", "단위 오류 의심")],
+    )
+    monkeypatch.setattr(scheduler_module, "run_quality_gate", lambda db, as_of: bad_report)
+
+    scheduler_module._run_quality_gate_safely()
+
+    assert len(calls) == 1
+    category, source, severity, message = calls[0]
+    assert category == "quality_gate"
+    assert severity == "error"
+    assert "KTB1Y" in message
+
+
+def test_run_quality_gate_safely_sends_no_alert_when_gate_passes(monkeypatch):
+    import app.ingestion.scheduler as scheduler_module
+    from app.ingestion.quality import QualityReport
+
+    calls = []
+    monkeypatch.setattr(
+        scheduler_module, "send_alert",
+        lambda db, category, source, severity, message: calls.append(
+            (category, source, severity, message)
+        ),
+    )
+    clean_report = QualityReport(as_of=__import__("datetime").date.today(), issues=[])
+    monkeypatch.setattr(scheduler_module, "run_quality_gate", lambda db, as_of: clean_report)
+
+    scheduler_module._run_quality_gate_safely()
+
+    assert calls == []
+
+
+def test_run_quality_gate_safely_alerts_when_gate_itself_raises(monkeypatch):
+    """게이트 실행 자체가 예외를 던지면(DB 접속 실패 등) 그것도 알려야 한다 —
+    "검사를 못 돌렸다"를 "이상 없었다"로 착각하면 안 된다."""
+    import app.ingestion.scheduler as scheduler_module
+
+    calls = []
+    monkeypatch.setattr(
+        scheduler_module, "send_alert",
+        lambda db, category, source, severity, message: calls.append(
+            (category, source, severity, message)
+        ),
+    )
+
+    def _raise(db, as_of):
+        raise RuntimeError("db unreachable")
+
+    monkeypatch.setattr(scheduler_module, "run_quality_gate", _raise)
+
+    scheduler_module._run_quality_gate_safely()
+
+    assert len(calls) == 1
+    assert "db unreachable" in calls[0][3]

@@ -21,7 +21,7 @@ from app.ingestion.quality import (
     run_quality_gate,
 )
 
-CODES = ["TESTKTB3Y", "TESTEQ", "TESTETF"]
+CODES = ["TESTKTB3Y", "TESTEQ", "TESTETF", "TESTKRWETF", "TESTUSDETF"]
 
 
 @pytest.fixture()
@@ -36,8 +36,8 @@ def db():
     session.close()
 
 
-def _asset(db, code: str, asset_type: str) -> DimAsset:
-    a = DimAsset(asset_type=asset_type, code=code, name_kr=code, currency="KRW")
+def _asset(db, code: str, asset_type: str, currency: str = "KRW") -> DimAsset:
+    a = DimAsset(asset_type=asset_type, code=code, name_kr=code, currency=currency)
     db.add(a)
     db.commit()
     db.refresh(a)
@@ -76,6 +76,31 @@ def test_value_range_catches_percent_vs_bp_unit_error(db):
     assert issues[0].severity == ERROR
     assert issues[0].check == "value_range"
     assert "×100" in issues[0].detail  # 조치 힌트가 붙어야 한다
+
+
+def test_value_range_accepts_krw_etf_price_that_would_fail_usd_bounds(db):
+    """KRW ETF는 좌수당 가격이 5~10만원대가 흔하다(예: 통안채1년 ETF 122260이
+    103,960원). USD ETF와 같은 상한(100,000)을 쓰면 이런 정상 가격이 오탐으로
+    잡힌다 — 2026-08 실측: 이 값이 매일 ERROR로 잡히던 것을 실제 알림에서
+    발견하고 통화별 범위 분리로 수정했다."""
+    asset = _asset(db, "TESTKRWETF", AssetType.ETF.value, currency="KRW")
+    _add(db, asset, date(2026, 7, 30), 103_960.0)
+
+    issues = check_value_range(asset, _rows(db, asset))
+
+    assert issues == []
+
+
+def test_value_range_still_catches_usd_etf_out_of_range(db):
+    """USD ETF(XLE $59, SPY $747 수준)에 KRW 상한을 실수로 적용하면 이번엔
+    반대로 진짜 단위 오류를 놓친다 — 통화별 범위가 양쪽 다 지켜지는지 확인한다."""
+    asset = _asset(db, "TESTUSDETF", AssetType.ETF.value, currency="USD")
+    _add(db, asset, date(2026, 7, 30), 5_950_000.0)  # 실제로는 $59.50인데 소수점이 밀린 상태를 가정
+
+    issues = check_value_range(asset, _rows(db, asset))
+
+    assert len(issues) == 1
+    assert issues[0].severity == ERROR
 
 
 def test_value_range_accepts_correctly_scaled_bp(db):
