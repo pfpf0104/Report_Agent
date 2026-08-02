@@ -56,10 +56,14 @@ def db():
 @respx.mock
 def test_run_upserts_prices_into_fact_market_daily(db):
     respx.post(TOKEN_URL).mock(return_value=httpx.Response(200, json={"access_token": "tok", "expires_in": 86400}))
+    # job.SYMBOLS는 삼성전자·SK하이닉스·통안채1년·국고채3년 4개다 — 심볼 수만큼
+    # 순서대로 응답해야 한다(_fetch_all_prices가 SYMBOLS 순서로 호출한다).
     respx.get(PRICE_URL).mock(
         side_effect=[
             httpx.Response(200, json={"rt_cd": "0", "output": {"stck_prpr": "208500", "acml_vol": "1000"}}),
             httpx.Response(200, json={"rt_cd": "0", "output": {"stck_prpr": "1401000", "acml_vol": "500"}}),
+            httpx.Response(200, json={"rt_cd": "0", "output": {"stck_prpr": "10250", "acml_vol": "300"}}),
+            httpx.Response(200, json={"rt_cd": "0", "output": {"stck_prpr": "10420", "acml_vol": "200"}}),
         ]
     )
 

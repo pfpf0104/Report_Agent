@@ -69,6 +69,12 @@ def test_backfill_uses_ks_suffix_and_sets_krw_currency(db):
     respx.get("https://query1.finance.yahoo.com/v8/finance/chart/000660.KS").mock(
         return_value=httpx.Response(200, json=_chart_response([ts], [170000.0]))
     )
+    respx.get("https://query1.finance.yahoo.com/v8/finance/chart/122260.KS").mock(
+        return_value=httpx.Response(200, json=_chart_response([ts], [50000.0]))
+    )
+    respx.get("https://query1.finance.yahoo.com/v8/finance/chart/114260.KS").mock(
+        return_value=httpx.Response(200, json=_chart_response([ts], [51000.0]))
+    )
 
     job.run()
 
@@ -104,6 +110,12 @@ def test_backfill_coexists_with_kis_seeded_row_on_different_date(db):
     )
     respx.get("https://query1.finance.yahoo.com/v8/finance/chart/000660.KS").mock(
         return_value=httpx.Response(200, json=_chart_response([ts], [170000.0]))
+    )
+    respx.get("https://query1.finance.yahoo.com/v8/finance/chart/122260.KS").mock(
+        return_value=httpx.Response(200, json=_chart_response([ts], [50000.0]))
+    )
+    respx.get("https://query1.finance.yahoo.com/v8/finance/chart/114260.KS").mock(
+        return_value=httpx.Response(200, json=_chart_response([ts], [51000.0]))
     )
 
     job.run()

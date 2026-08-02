@@ -1,4 +1,4 @@
-"""Yahoo Finance에서 삼성전자·SK하이닉스 5년 일별 종가를 백필한다.
+"""Yahoo Finance에서 삼성전자·SK하이닉스·국채 ETF 5년 일별 종가를 백필한다.
 
 KIS OpenAPI는 현재가 조회(inquire-price)만 제공하고 히스토리 API가 없어
 백필에는 쓸 수 없다. 대신 Yahoo Finance가 ".KS" 접미사로 코스피 종목을
@@ -11,6 +11,10 @@ KIS OpenAPI는 현재가 조회(inquire-price)만 제공하고 히스토리 API�
 knowledge_date = trade_date(일별 시세는 당일 공표, 다른 시세 job들과 동일 규약).
 이미 적재된 (asset_id, trade_date)는 건너뛴다(재개 가능, KIS가 채운 최신
 거래일과 자동으로 겹치지 않는다).
+
+SYMBOLS에 포함된 국채 ETF(통안채1년/국고채3년)의 발행주체 차이는
+ingest_korean_equity_prices.py의 docstring 참고 — 이 파일은 asset_type
+구분(EQUITY vs ETF)만 그대로 물려받는다.
 """
 from __future__ import annotations
 
@@ -24,7 +28,7 @@ from app.db.base import SessionLocal
 from app.db.models.dim_asset import AssetType, DimAsset
 from app.db.models.fact_market_daily import FactMarketDaily
 from app.ingestion.connectors.yahoo_finance_client import fetch_daily_history
-from app.ingestion.jobs.ingest_korean_equity_prices import SYMBOLS
+from app.ingestion.jobs.ingest_korean_equity_prices import SYMBOLS, _BOND_ETF_CODES
 from app.ingestion.run_tracker import track_ingestion_run
 
 # Yahoo Finance 심볼 접미사(위 docstring 참고).
@@ -34,7 +38,8 @@ _YAHOO_SUFFIX = ".KS"
 def _get_or_create_asset(db: Session, code: str, name_kr: str) -> DimAsset:
     asset = db.query(DimAsset).filter_by(code=code).first()
     if asset is None:
-        asset = DimAsset(asset_type=AssetType.EQUITY.value, code=code, name_kr=name_kr, currency="KRW")
+        asset_type = AssetType.ETF.value if code in _BOND_ETF_CODES else AssetType.EQUITY.value
+        asset = DimAsset(asset_type=asset_type, code=code, name_kr=name_kr, currency="KRW")
         db.add(asset)
         db.commit()
         db.refresh(asset)

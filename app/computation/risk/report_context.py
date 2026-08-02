@@ -32,6 +32,7 @@ import numpy as np
 from sqlalchemy.orm import Session
 
 from app.computation.backtest.engine import (
+    WeightFn,
     from_covariance,
     periodic_rebalance_indices,
     run_backtest,
@@ -92,6 +93,44 @@ NEUTRAL_STRATEGY_DISCLOSURE = (
     "아니라 합성값이므로(MASTER_PLAN G3), 그 신호를 넣은 백테스트는 검증 가능한 "
     "근거를 갖지 못한다. 신호가 실데이터로 교체되면 동일한 엔진에 tilt만 추가한다."
 )
+
+FIXED_ALLOCATION_DISCLOSURE_TEMPLATE = (
+    "백테스트 대상은 {label} 고정 배분이다. MetroGuard의 실제 목표 듀레이션(D*)은 "
+    "City AI 예측(city_ai_stub.py)에 의존하는데, 이 예측은 아직 실제 PCA-Ridge "
+    "모델이 아니라 합성 데이터다(MASTER_PLAN G4). 그 예측으로 매월 조정한 듀레이션을 "
+    "백테스트하면 CallRank의 G3와 같은 문제가 된다. D*=2년(1년물과 3년물의 정확한 "
+    "중간)은 예측 신호 없이 정의되는 고정점이라, 검증 가능한 기준선으로 쓴다. "
+    "실제 City AI 모델이 갖춰지면 이 자리에 매월 조정되는 실제 D*를 넣을 수 있다."
+)
+
+
+def build_duration_performance_context(db: Session, as_of: date) -> dict:
+    """MetroGuard 성과 페이지 컨텍스트 — D*=2년 고정 배분 백테스트.
+
+    universe_codes/benchmark_code는 ingest_korean_equity_prices.py의
+    BOND_ETF_SHORT/BOND_ETF_LONG(통안채1년/국고채3년)이다. 벤치마크는
+    3년물(BOND_ETF_LONG) 100% 고정("아무 조정도 하지 않았을 때") 배분이다.
+
+    유니버스가 이 두 자산뿐이라 벤치마크를 유니버스 밖으로 빼면 리스크패리티
+    최소 자산요건(2개)을 못 채운다 — benchmark_in_universe=True로 벤치마크를
+    유니버스에 남긴다. weight_fn 쪽 전략 비중(1년물·3년물 동일가중)과 벤치마크
+    쪽 비중(3년물 100%)은 서로 다른 배분 규칙이며 독립적으로 계산된다.
+    """
+    from app.computation.backtest.engine import buy_and_hold
+    from app.ingestion.jobs.ingest_korean_equity_prices import BOND_ETF_LONG, BOND_ETF_SHORT
+
+    return build_performance_context(
+        db,
+        as_of,
+        universe_codes=[BOND_ETF_SHORT, BOND_ETF_LONG],
+        benchmark_code=BOND_ETF_LONG,
+        weight_fn=buy_and_hold([0.5, 0.5]),
+        strategy_label="D*=2년 고정 배분(1년물·3년물 동일가중)",
+        strategy_disclosure=FIXED_ALLOCATION_DISCLOSURE_TEMPLATE.format(
+            label="D*=2년(1년물·3년물 동일가중)"
+        ),
+        benchmark_in_universe=True,
+    )
 
 
 @dataclass(frozen=True)
@@ -250,6 +289,7 @@ def _performance_charts(
     roll_sharpe: rolling.RollingSeries,
     roll_corr: rolling.RollingSeries,
     roll_vol: rolling.RollingSeries,
+    strategy_label: str = "리스크패리티 중립 배분",
 ) -> dict:
     """차트 3종을 data URI로 만든다.
 
@@ -263,7 +303,7 @@ def _performance_charts(
     charts = {
         "performance_curve_chart_uri": line_chart(
             labels,
-            {"리스크패리티 중립 배분": strategy_curve, benchmark_code: benchmark_curve},
+            {strategy_label: strategy_curve, benchmark_code: benchmark_curve},
         )
     }
 
@@ -308,18 +348,37 @@ def build_performance_context(
     cost_model: CostModel = DEFAULT_COST_MODEL,
     constraints: ConstraintSet = DEFAULT_CONSTRAINTS,
     risk_free_rate: float = 0.0,
+    weight_fn: WeightFn | None = None,
+    weight_fn_min_observations: int = MIN_COVARIANCE_OBSERVATIONS,
+    strategy_label: str = "리스크패리티 중립 배분",
+    strategy_disclosure: str = NEUTRAL_STRATEGY_DISCLOSURE,
+    benchmark_in_universe: bool = False,
 ) -> dict:
     """성과·리스크 페이지 컨텍스트를 만든다.
 
     이력이 부족하면 숫자를 만들어내지 않고 `performance_disclosure`의 보류
     컨텍스트를 그대로 돌려준다 — 페이지는 "왜 비어 있는지"를 싣는다.
+
+    weight_fn: 생략하면 CallRank 기본값(공분산 기반 리스크패리티)을 쓴다.
+        MetroGuard처럼 리스크패리티가 아니라 고정 배분(buy_and_hold)이 맞는
+        전략은 이 파라미터로 주입한다 — 로직은 동일하고 "무엇을 배분 규칙으로
+        쓸지"만 다르다.
+
+    benchmark_in_universe: CallRank처럼 벤치마크(SPY)가 유니버스 밖 별도
+        자산이면 False(기본값) — 유니버스에서 벤치마크를 제외한다. MetroGuard처럼
+        유니버스가 자산 2개뿐이고 그중 하나(3년물)를 벤치마크로도 써야 최소
+        자산요건(2개)을 채울 수 있는 경우 True로 둔다 — 이때 벤치마크는
+        유니버스에서 제외되지 않고 100% buy-and-hold 비교선으로만 별도 산출된다.
     """
-    history = load_price_history(db, as_of, universe_codes + [benchmark_code])
+    codes_to_load = universe_codes if benchmark_in_universe else universe_codes + [benchmark_code]
+    history = load_price_history(db, as_of, codes_to_load)
 
     if benchmark_code not in history.codes:
         return _pending(f"벤치마크({benchmark_code}) 가격 이력 없음", history.n_observations)
 
-    universe = [c for c in history.codes if c != benchmark_code]
+    universe = list(history.codes) if benchmark_in_universe else [
+        c for c in history.codes if c != benchmark_code
+    ]
     if len(universe) < 2:
         return _pending(f"유니버스 자산 {len(universe)}개 — 2개 이상 필요", history.n_observations)
     if history.n_observations < MIN_BACKTEST_OBSERVATIONS:
@@ -341,13 +400,15 @@ def build_performance_context(
     # 완화 여부를 받아 가정 문구에 명시한다(조용히 바꾸지 않는다).
     effective, relaxed = relax_cap_to_feasible(constraints, len(universe))
 
+    resolved_weight_fn = weight_fn or from_covariance(
+        lambda h: risk_parity(np.cov(h, rowvar=False, ddof=1)),
+        min_observations=weight_fn_min_observations,
+    )
+
     result = run_backtest(
         dates,
         strategy_panel,
-        weight_fn=from_covariance(
-            lambda h: risk_parity(np.cov(h, rowvar=False, ddof=1)),
-            min_observations=MIN_COVARIANCE_OBSERVATIONS,
-        ),
+        weight_fn=resolved_weight_fn,
         rebalance_indices=rebalance,
         cost_model=cost_model,
         constraints=effective,
@@ -381,7 +442,8 @@ def build_performance_context(
     return {
         "performance_available": True,
         "performance_hypothetical_disclosure": HYPOTHETICAL_DISCLOSURE,
-        "performance_neutral_disclosure": NEUTRAL_STRATEGY_DISCLOSURE,
+        "performance_neutral_disclosure": strategy_disclosure,
+        "performance_strategy_label": strategy_label,
         "performance_period": (
             f"{eval_dates[0].isoformat()} ~ {eval_dates[-1].isoformat()} "
             f"({len(eval_dates)}거래일, 자산 {len(universe)}종)"
@@ -430,5 +492,6 @@ def build_performance_context(
         **_performance_charts(
             curve_labels, strategy_curve, benchmark_curve, benchmark_code,
             roll_labels, roll_sharpe, roll_corr, roll_vol,
+            strategy_label=strategy_label,
         ),
     }

@@ -80,13 +80,82 @@
   {{ report_footer("동결 연구는 2026년 6월 30일까지의 비용 반영 지수 슬리브 시뮬레이션") }}
 </div>
 
+{% if performance_available %}
+<div class="page">
+  <div class="top-bar"></div>
+  <div class="page-body">
+    {{ report_header(
+      "PERFORMANCE REPORTING",
+      "D*=2년 고정 배분 백테스트 — 성과·리스크",
+      "1년물·3년물 채권 ETF에 D*=2년(동일가중) 고정 배분했을 때의 워크포워드 결과. City AI 예측을 반영한 실제 컨트롤러 성과가 아니다.",
+      [performance_period, "벤치마크 " ~ performance_benchmark, performance_data_status]
+    ) }}
+
+    {{ callout_box("warning", "가설적 백테스트 — 실현 성과가 아니다", performance_hypothetical_disclosure) }}
+    {{ callout_box("info", "무엇을 백테스트했는가", performance_neutral_disclosure) }}
+
+    {% if performance_curve_chart_uri %}
+    <img src="{{ performance_curve_chart_uri }}" style="width:100%; margin-top:8px;">
+    <div class="chart-caption">평가 구간 시작을 1.0으로 둔 누적 성장. 거래비용 차감 후.</div>
+    {% endif %}
+
+    <table class="data-table" style="margin-top:8px;">
+      <thead>
+        <tr><th>지표</th><th>{{ performance_strategy_label }}</th><th>{{ performance_benchmark }}</th></tr>
+      </thead>
+      <tbody>
+        {% for row in risk_metric_rows %}
+        <tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <div class="chart-caption">{{ performance_assumptions }}</div>
+  </div>
+  {{ report_footer("계산: app/computation/backtest/engine.py — 비중 함수는 결정 시점 이전 데이터만 본다") }}
+</div>
+
+<div class="page">
+  <div class="top-bar"></div>
+  <div class="page-body">
+    {{ report_header(
+      "GIPS COMPOSITE",
+      "연도별 성과와 12개월 롤링 분석",
+      "전 구간 지표 하나는 국면 차이를 숨긴다. 연도별·롤링으로 함께 본다.",
+      [gips_minimum_note]
+    ) }}
+
+    <table class="data-table">
+      <thead>
+        <tr><th>연도</th><th>포트폴리오</th><th>{{ performance_benchmark }}</th><th>초과</th><th>3년 표준편차</th><th>벤치마크 3년</th></tr>
+      </thead>
+      <tbody>
+        {% for row in gips_rows %}
+        <tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <div class="chart-caption">* 부분연도 — 연환산하지 않았다. 36개월 미만 구간의 3년 표준편차는 계산하지 않고 —로 남긴다.</div>
+
+    {% if rolling_ratio_chart_uri %}
+    <img src="{{ rolling_ratio_chart_uri }}" style="width:100%; margin-top:8px;">
+    <img src="{{ rolling_volatility_chart_uri }}" style="width:100%; margin-top:4px;">
+    {% for line in rolling_summaries %}
+    <div class="chart-caption">{{ line }}</div>
+    {% endfor %}
+    {% else %}
+    <div class="chart-caption">롤링 분석은 12개월 창을 채울 이력이 쌓인 뒤 표시한다.</div>
+    {% endif %}
+  </div>
+  {{ report_footer("GIPS Standards for Firms 2020 요건: 5년 연간수익률 · 벤치마크 병기 · 3년 사후 표준편차") }}
+</div>
+{% else %}
 <div class="page">
   <div class="top-bar"></div>
   <div class="page-body">
     {{ report_header(
       "PERFORMANCE REPORTING",
       "성과 보고 준비 상태",
-      "실제 백테스트 엔진이 구현되기 전까지 성과 수치를 싣지 않는다.",
+      "가격 이력이 요건을 충족하기 전까지 성과 수치를 싣지 않는다.",
       ["GIPS 요건 충족 시 복원", "컨트롤러 검산은 앞 페이지 참조"]
     ) }}
 
@@ -98,6 +167,7 @@
   </div>
   {{ report_footer("성과 미기재는 의도된 것 — 근거 없는 수치를 싣지 않기 위함") }}
 </div>
+{% endif %}
 
 <div class="page">
   <div class="top-bar"></div>

@@ -268,3 +268,53 @@ def test_costs_are_actually_charged_and_disclosed(db):
     assert cheap["equity_curve"][-1] > pricey["equity_curve"][-1]
     assert "누적 거래비용" in pricey["performance_assumptions"]
     assert "스프레드 100.0bp" in pricey["performance_assumptions"]
+
+
+# --- MetroGuard: 벤치마크가 유니버스 안에 있는 2자산 케이스 --------------------
+
+
+def test_benchmark_in_universe_keeps_both_assets_in_the_universe(db):
+    """MetroGuard처럼 유니버스가 자산 2개뿐이고 그중 하나가 벤치마크를 겸하는
+    경우, benchmark_in_universe=True를 주면 유니버스에서 벤치마크가 빠지지
+    않아야 한다 — 빠지면 자산 1개만 남아 항상 보류로 떨어진다."""
+    from app.computation.backtest.engine import buy_and_hold
+
+    two_asset_universe = [UNIVERSE[0], UNIVERSE[1]]
+    benchmark = UNIVERSE[1]
+    n = MIN_BACKTEST_OBSERVATIONS + 300
+    dates = _business_days(n)
+    for i, code in enumerate(two_asset_universe):
+        _seed(db, code, dates, _price_path(n, 700 + i, vol=0.010 + 0.004 * i))
+
+    context = build_performance_context(
+        db, dates[-1], two_asset_universe, benchmark,
+        weight_fn=buy_and_hold([0.5, 0.5]),
+        benchmark_in_universe=True,
+    )
+
+    assert context["performance_available"] is True
+    assert context["performance_benchmark"] == benchmark
+
+
+def test_benchmark_in_universe_uses_the_injected_weight_fn_not_risk_parity(db):
+    """weight_fn=buy_and_hold([0.5, 0.5])를 주입하면 첫 리밸런싱부터 정확히
+    50/50이어야 한다 — 리스크패리티 기본값으로 조용히 무너지면 변동성이 다른
+    두 자산의 비중이 50/50에서 벗어난다."""
+    from app.computation.backtest.engine import buy_and_hold
+
+    two_asset_universe = [UNIVERSE[0], UNIVERSE[1]]
+    benchmark = UNIVERSE[1]
+    n = MIN_BACKTEST_OBSERVATIONS + 60
+    dates = _business_days(n)
+    for i, code in enumerate(two_asset_universe):
+        _seed(db, code, dates, _price_path(n, 800 + i, vol=0.005 + 0.015 * i))
+
+    context = build_performance_context(
+        db, dates[-1], two_asset_universe, benchmark,
+        weight_fn=buy_and_hold([0.5, 0.5]),
+        benchmark_in_universe=True,
+        strategy_label="테스트 고정 배분",
+    )
+
+    assert context["performance_available"] is True
+    assert context["performance_strategy_label"] == "테스트 고정 배분"

@@ -33,7 +33,7 @@ import numpy as np
 from sqlalchemy.orm import Session
 
 from app.computation.fixed_income.city_ai_stub import synthetic_city_ai_output
-from app.computation.performance_disclosure import build_performance_pending_context
+from app.computation.risk.report_context import build_duration_performance_context
 
 D_LONG_YEARS = 3.0
 D_SHORT_YEARS = 1.0
@@ -211,7 +211,7 @@ def build_metroguard_context(db: Session, as_of: date) -> dict:
         "formula_cards": FORMULA_CARDS,
         "workflow_steps": WORKFLOW_STEPS,
         "checklist_items": CHECKLIST_ITEMS,
-        **build_performance_pending_context(),
+        **build_duration_performance_context(db, as_of),
         "sensitivity_rows": sensitivity_rows,
         "warning_function_chart_uri": _warning_function_chart(),
         "historical_g_chart_uri": _historical_g_chart(as_of),

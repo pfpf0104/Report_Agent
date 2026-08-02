@@ -125,8 +125,7 @@ def test_build_metroguard_context_smoke():
         "formula_cards",
         "workflow_steps",
         "checklist_items",
-        "performance_pending_title",
-        "gips_requirements",
+        "performance_available",
         "sensitivity_rows",
         "warning_function_chart_uri",
         "historical_g_chart_uri",
@@ -134,6 +133,14 @@ def test_build_metroguard_context_smoke():
         "source",
     ):
         assert key in context, f"{key} 누락"
+
+    # 성과 이력 충족 여부는 DB 상태에 따라 달라진다 — 두 경로 모두 컨텍스트가
+    # 완결돼 있는지만 확인한다(어느 쪽이든 렌더 가능해야 한다).
+    if context["performance_available"]:
+        assert context["gips_rows"]
+        assert context["risk_metric_rows"]
+    else:
+        assert "gips_requirements" in context
 
     for uri_key in ("warning_function_chart_uri", "historical_g_chart_uri"):
         assert context[uri_key].startswith("data:image/png;base64,")
