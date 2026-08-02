@@ -31,6 +31,7 @@ from datetime import date
 
 from sqlalchemy.orm import Session
 
+from app.computation.risk.cross_asset import build_cross_asset_report_context
 from app.db.models.dim_asset import DimAsset
 from app.db.models.fact_financial_quarterly import FactFinancialQuarterly
 from app.db.models.fact_market_daily import FactMarketDaily
@@ -475,4 +476,5 @@ def build_valuation_context(db: Session, as_of: date) -> dict:
         "value_composition_rows": [_value_composition_row(samsung), _value_composition_row(hynix)],
         "pbr_rows": [_pbr_cross_check_row(samsung), _pbr_cross_check_row(hynix)],
         "source": "독립 투자분석 보고서 (분석 기준 BPS는 DART 실측 우선, 데이터 없으면 보고서 고정값)",
+        **build_cross_asset_report_context(db, as_of),
     }

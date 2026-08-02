@@ -35,10 +35,7 @@ def test_rim_values_match_reference_report(targets, book_value, scenarios):
         assert row["value"] == pytest.approx(target, abs=100)  # 원 단위 반올림 오차 허용
 
 
-@pytest.fixture()
-def db():
-    session = SessionLocal()
-    yield session
+def _cleanup_005930_000660(session):
     session.query(FactMarketDaily).filter(FactMarketDaily.asset_id.in_(
         session.query(DimAsset.asset_id).filter(DimAsset.code.in_(["005930", "000660"]))
     )).delete(synchronize_session=False)
@@ -47,6 +44,19 @@ def db():
     )).delete(synchronize_session=False)
     session.query(DimAsset).filter(DimAsset.code.in_(["005930", "000660"])).delete(synchronize_session=False)
     session.commit()
+
+
+@pytest.fixture()
+def db():
+    session = SessionLocal()
+    # setup에도 정리가 필요하다 — 실제 인제스천 job(ingest_korean_equity_prices
+    # 등)이 이미 005930/000660으로 운영 데이터를 채워둔 상태에서 이 테스트가
+    # 실행되면, "KIS 데이터 없음 → 폴백" 시나리오를 검증하려는 테스트가 실제로는
+    # 실측 경로를 타 실패한다(2026-08 실측: 삼성전자 실제 현재가가 207,000원으로
+    # 채워진 상태에서 재현됨).
+    _cleanup_005930_000660(session)
+    yield session
+    _cleanup_005930_000660(session)
     session.close()
 
 
@@ -142,7 +152,10 @@ def test_build_valuation_context_includes_new_pages_data():
     finally:
         db.close()
 
-    for key in ("cycle_scenario_cards", "value_composition_rows", "pbr_rows", "weight_donut_chart_uri"):
+    for key in (
+        "cycle_scenario_cards", "value_composition_rows", "pbr_rows", "weight_donut_chart_uri",
+        "cross_asset_available",
+    ):
         assert key in context, f"{key} 누락"
 
     assert len(context["value_composition_rows"]) == 2

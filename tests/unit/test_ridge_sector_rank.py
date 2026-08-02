@@ -103,6 +103,7 @@ def test_build_callrank_context_smoke():
         "what_and_why_cards",
         "workflow_steps",
         "performance_available",
+        "cross_asset_available",
     ):
         assert key in context, f"{key} 누락"
 

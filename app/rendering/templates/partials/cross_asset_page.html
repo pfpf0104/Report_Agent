@@ -1,0 +1,34 @@
+{# 크로스에셋 상관행렬 페이지 — CallRank/MetroGuard/밸류에이션 3개 리포트가 공유한다
+   (app/computation/risk/cross_asset.py). include하는 템플릿은 report_header/
+   callout_box/report_footer 매크로를 이미 import하고 있어야 한다. #}
+{% if cross_asset_available %}
+<div class="page">
+  <div class="top-bar"></div>
+  <div class="page-body">
+    {{ report_header(
+      "CROSS-ASSET VIEW",
+      "3개 리포트 대표 자산 상관행렬",
+      "CallRank·MetroGuard·밸류에이션이 각자 유니버스만 보던 것에서 벗어나, 세 리포트의 대표 자산이 실제로 얼마나 같이 움직였는지 본다.",
+      [cross_asset_period, cross_asset_data_status]
+    ) }}
+
+    {{ callout_box("info", "상관계수가 말하지 않는 것", cross_asset_disclosure) }}
+
+    {% if cross_asset_heatmap_chart_uri %}
+    <img src="{{ cross_asset_heatmap_chart_uri }}" style="width:100%; margin-top:8px;">
+    {% endif %}
+
+    <table class="data-table" style="margin-top:8px;">
+      <thead>
+        <tr><th></th>{% for label in cross_asset_labels %}<th>{{ label }}</th>{% endfor %}</tr>
+      </thead>
+      <tbody>
+        {% for row in cross_asset_table_rows %}
+        <tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {{ report_footer("계산: app/computation/risk/cross_asset.py — 일간 수익률 피어슨 상관계수") }}
+</div>
+{% endif %}

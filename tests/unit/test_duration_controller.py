@@ -131,6 +131,7 @@ def test_build_metroguard_context_smoke():
         "historical_g_chart_uri",
         "glossary_cards",
         "source",
+        "cross_asset_available",
     ):
         assert key in context, f"{key} 누락"
 

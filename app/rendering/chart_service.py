@@ -16,7 +16,9 @@ matplotlib.use("Agg")
 import matplotlib.font_manager as fm  # noqa: E402
 import matplotlib.pyplot as plt  # noqa: E402
 
-from app.core.design_tokens import CHART_PALETTE, GRAY_300, semantic_color  # noqa: E402
+from matplotlib.colors import LinearSegmentedColormap  # noqa: E402
+
+from app.core.design_tokens import CHART_PALETTE, DOWN, GRAY_300, NEUTRAL, UP, semantic_color  # noqa: E402
 
 logger = logging.getLogger("app.rendering")
 
@@ -152,6 +154,35 @@ def vertical_bar_chart(
     ax.spines["bottom"].set_color(GRAY_300)
     ax.tick_params(labelsize=8, colors="#1f2933")
     ax.axhline(0, color=GRAY_300, linewidth=0.8)
+    fig.tight_layout()
+    return _fig_to_data_uri(fig)
+
+
+# 상관계수 -1~+1을 DOWN(음의 상관, 파랑)→흰색(무상관)→UP(양의 상관, 빨강)으로
+# 잇는 발산형 컬러맵. design_tokens.py의 UP/DOWN 시맨틱 색상을 그대로 써서
+# 다른 차트(막대·라인)의 상승/하락 관례와 일관되게 맞춘다.
+_CORRELATION_CMAP = LinearSegmentedColormap.from_list("correlation_diverging", [DOWN, "#ffffff", UP])
+
+
+def correlation_heatmap(labels: list[str], matrix: list[list[float]], *, figsize=(6.2, 5.2)) -> str:
+    """정방 상관행렬을 히트맵으로 그린다. 대각선은 항상 1.0이다."""
+    fig, ax = plt.subplots(figsize=figsize)
+    im = ax.imshow(matrix, cmap=_CORRELATION_CMAP, vmin=-1, vmax=1)
+
+    n = len(labels)
+    ax.set_xticks(range(n), labels, rotation=35, ha="right", fontsize=8)
+    ax.set_yticks(range(n), labels, fontsize=8)
+
+    for i in range(n):
+        for j in range(n):
+            value = matrix[i][j]
+            # 배경이 진할수록(절대값이 클수록) 대비를 위해 텍스트를 흰색으로.
+            text_color = "white" if abs(value) > 0.6 else "#1f2933"
+            ax.text(j, i, f"{value:+.2f}", ha="center", va="center", fontsize=8, color=text_color)
+
+    ax.spines[:].set_visible(False)
+    cbar = fig.colorbar(im, ax=ax, shrink=0.8, pad=0.02)
+    cbar.ax.tick_params(labelsize=7, colors=NEUTRAL)
     fig.tight_layout()
     return _fig_to_data_uri(fig)
 
