@@ -156,6 +156,8 @@ def test_build_valuation_context_includes_new_pages_data():
         "cycle_scenario_cards", "value_composition_rows", "pbr_rows", "weight_donut_chart_uri",
         "cross_asset_available",
         "regime_available",
+        "disclosure_available",
+        "lineage_rows",
     ):
         assert key in context, f"{key} 누락"
 

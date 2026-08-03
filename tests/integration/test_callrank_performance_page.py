@@ -117,3 +117,15 @@ def test_removed_hardcoded_backtest_figure_stays_removed(db):
     html = render_html("callrank/report.html", build_callrank_context(db, AS_OF))
     assert "39.6%" not in html
     assert "42.1%" not in html
+
+
+def test_disclosure_and_lineage_pages_render(db):
+    """Phase 4-2/4-3 — 공시·계보 페이지가 실제로 렌더링되고 합성 임베딩
+    한계가 노출되는지 확인한다."""
+    context = build_callrank_context(db, AS_OF)
+    html = render_html("callrank/report.html", context)
+
+    assert context["disclosure_available"] is True
+    assert "방법론 한계 및 공시" in html
+    assert "핵심 수치의 출처·계산 경로" in html
+    assert "sector_embeddings.py" in html

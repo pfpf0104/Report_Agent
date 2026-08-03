@@ -1,0 +1,30 @@
+{# 데이터 계보 부록 — CallRank/MetroGuard/밸류에이션 3개 리포트가 공유한다
+   (app/computation/disclosure/report_context.py). include하는 템플릿은
+   report_header/callout_box/report_footer 매크로를 이미 import하고 있어야 한다. #}
+{% if disclosure_available %}
+<div class="page">
+  <div class="top-bar"></div>
+  <div class="page-body">
+    {{ report_header(
+      "DATA LINEAGE",
+      "핵심 수치의 출처·계산 경로",
+      "이 리포트에 나온 주요 수치가 어느 코드에서, 어떤 방식으로 계산됐는지 추적한다.",
+      ["숫자의 출처를 감추지 않는다"]
+    ) }}
+
+    <table class="data-table" style="margin-top:4px;">
+      <thead>
+        <tr><th>수치</th><th>계산 위치</th><th>산출 방식</th></tr>
+      </thead>
+      <tbody>
+        {% for row in lineage_rows %}
+        <tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    {{ callout_box("info", "Point-in-time 원칙", lineage_point_in_time_note) }}
+  </div>
+  {{ report_footer("계산: app/computation/disclosure/report_context.py") }}
+</div>
+{% endif %}

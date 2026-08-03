@@ -1,0 +1,39 @@
+{# 필수 공시 페이지 — CallRank/MetroGuard/밸류에이션 3개 리포트가 공유한다
+   (app/computation/disclosure/report_context.py). include하는 템플릿은
+   report_header/callout_box/report_footer 매크로를 이미 import하고 있어야 한다. #}
+{% if disclosure_available %}
+<div class="page">
+  <div class="top-bar"></div>
+  <div class="page-body">
+    {{ report_header(
+      "DISCLOSURE",
+      "방법론 한계 및 공시",
+      "이 리포트의 계산 방식이 어디까지 검증됐고 어디서부터 가정에 의존하는지 명시한다.",
+      ["CFA Institute 표준 리서치 리포트 필수 공시 섹션"]
+    ) }}
+
+    <div style="margin-top:4px; font-weight:700; font-size:9.5px; color:#1f2933;">방법론 한계</div>
+    <ul style="margin: 8px 0 14px; padding-left: 18px; font-size: 9.5px; line-height: 2.0;">
+      {% for item in disclosure_methodology_limitations %}
+      <li>{{ item }}</li>
+      {% endfor %}
+    </ul>
+
+    <div style="font-weight:700; font-size:9.5px; color:#1f2933;">데이터 출처</div>
+    <table class="data-table" style="margin-top:4px;">
+      <thead>
+        <tr><th>항목</th><th>출처</th></tr>
+      </thead>
+      <tbody>
+        {% for row in disclosure_data_source_rows %}
+        <tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    {{ callout_box("info", "이해상충", disclosure_conflict_of_interest) }}
+    {{ callout_box("warning", "면책", disclosure_disclaimer) }}
+  </div>
+  {{ report_footer("계산: app/computation/disclosure/report_context.py") }}
+</div>
+{% endif %}
