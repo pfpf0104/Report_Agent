@@ -108,6 +108,61 @@
 </div>
 {% endif %}
 
+{% if narrative_available %}
+<div class="page">
+  <div class="top-bar"></div>
+  <div class="page-body">
+    {{ report_header(
+      "OBSERVATIONS",
+      "관찰 서술",
+      "레짐 판정과 크로스에셋 상관계수를 문장으로 옮긴다 — 새로운 통계 검정을 하지 않는다.",
+      ["인과관계를 주장하지 않음"]
+    ) }}
+
+    {{ callout_box("warning", "이 페이지가 말하지 않는 것", narrative_disclosure) }}
+
+    <ul style="margin: 12px 0; padding-left: 18px; font-size: 9.5px; line-height: 2.0;">
+      {% for sentence in narrative_sentences %}
+      <li>{{ sentence }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {{ report_footer("계산: app/computation/regime/narrative.py — 관찰된 사실만 서술, 인과 어휘 런타임 검증") }}
+</div>
+{% endif %}
+
+{% if analog_available %}
+<div class="page">
+  <div class="top-bar"></div>
+  <div class="page-body">
+    {{ report_header(
+      "HISTORICAL ANALOGS",
+      "'" ~ analog_current_quadrant ~ "' 국면이었던 과거 시점",
+      "산업생산·CPI YoY 추세로 매월 사분면을 재구성해, 현재와 같은 사분면이었던 과거 시점을 찾는다.",
+      [analog_data_status]
+    ) }}
+
+    {{ callout_box("warning", "과거가 미래를 예측하지 않는다", analog_disclosure) }}
+
+    {% if analog_has_matches %}
+    <table class="data-table" style="margin-top:8px;">
+      <thead>
+        <tr><th>월</th><th>사분면</th></tr>
+      </thead>
+      <tbody>
+        {% for row in analog_months_rows %}
+        <tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="chart-caption">재구성 가능한 이력 안에서 같은 사분면이었던 과거 시점을 찾지 못했다.</div>
+    {% endif %}
+  </div>
+  {{ report_footer("계산: app/computation/regime/analog.py — 판정 로직은 classifier.py와 동일, 여러 시점에 반복 적용") }}
+</div>
+{% endif %}
+
 <div class="page">
   <div class="top-bar"></div>
   <div class="page-body">
@@ -121,7 +176,7 @@
     {{ callout_box(
       "warning",
       "인과관계·매매신호가 아니다",
-      "이 페이지는 3개 전략의 현재 headline 지표와, 그 자산들이 실제로 얼마나 같이 움직였는지(상관계수), 지금이 어떤 거시 국면인지(레짐)를 나란히 보여줄 뿐이다. 레짐이 특정 전략의 성과를 설명하거나 예측한다고 주장하지 않는다 — 세 구성요소는 각자 독립적으로 계산되며 서로를 참조하지 않는다."
+      "이 리포트는 3개 전략의 현재 headline 지표, 그 자산들이 실제로 얼마나 같이 움직였는지(상관계수), 지금이 어떤 거시 국면인지(레짐), 그 국면과 상관계수를 문장으로 옮긴 것(관찰 서술), 현재와 같은 국면이었던 과거 시점(역사적 패턴 매칭)을 나란히 보여줄 뿐이다. 레짐이 특정 전략의 성과를 설명하거나 예측한다고 주장하지 않으며, 과거에 같은 국면이 있었다는 사실이 향후 성과를 시사하지도 않는다 — 다섯 구성요소는 각자 독립적으로 계산되며 서로를 참조하지 않는다."
     ) }}
 
     {{ callout_box(

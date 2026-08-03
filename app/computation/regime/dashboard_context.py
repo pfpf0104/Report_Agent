@@ -13,6 +13,14 @@
 모은다. 새 숫자를 만들어내는 게 아니라 이미 검증된 숫자들을 재배열하는
 것이므로, 이 리포트 자체에 새로운 정확성 리스크는 없다 — 각 구성요소의
 정확성은 이미 그 구성요소의 테스트가 보증한다.
+
+## Phase 3-4: 관찰 서술 + 역사적 패턴 매칭
+
+narrative.py(관찰 서술)와 analog.py(역사적 레짐 패턴 매칭)는 여기서 딱 한 번
+classify_regime()/build_cross_asset_correlation()을 호출해 그 결과를
+narrative/analog 양쪽에 그대로 넘긴다 — regime/report_context.py(dict 반환)를
+거치지 않고 원본 dataclass(RegimeContext/CrossAssetContext)를 재사용해, 같은
+값을 여러 번 다시 계산하지 않는다.
 """
 from __future__ import annotations
 
@@ -22,8 +30,11 @@ from sqlalchemy.orm import Session
 
 from app.computation.fixed_income.duration_controller import build_metroguard_context
 from app.computation.quant.ridge_sector_rank import build_callrank_context
+from app.computation.regime.analog import build_analog_report_context
+from app.computation.regime.classifier import classify_regime
+from app.computation.regime.narrative import build_observation_narrative
 from app.computation.regime.report_context import build_regime_report_context
-from app.computation.risk.cross_asset import build_cross_asset_report_context
+from app.computation.risk.cross_asset import build_cross_asset_correlation, build_cross_asset_report_context
 from app.computation.valuation.residual_income_model import build_valuation_context
 
 
@@ -31,8 +42,16 @@ def build_macro_regime_context(db: Session, as_of: date) -> dict:
     callrank = build_callrank_context(db, as_of)
     metroguard = build_metroguard_context(db, as_of)
     valuation = build_valuation_context(db, as_of)
+
+    # 원본 dataclass는 한 번만 계산해 report_context(dict 변환)와
+    # narrative/analog(dataclass 그대로 소비) 양쪽에 재사용한다.
+    regime_ctx = classify_regime(db, as_of)
+    cross_asset_ctx = build_cross_asset_correlation(db, as_of)
+
     regime = build_regime_report_context(db, as_of)
     cross_asset = build_cross_asset_report_context(db, as_of)
+    narrative = build_observation_narrative(regime_ctx, cross_asset_ctx)
+    analog = build_analog_report_context(db, as_of)
 
     strategy_summaries = [
         {
@@ -54,4 +73,6 @@ def build_macro_regime_context(db: Session, as_of: date) -> dict:
         "strategy_summaries": strategy_summaries,
         **regime,
         **cross_asset,
+        **narrative,
+        **analog,
     }

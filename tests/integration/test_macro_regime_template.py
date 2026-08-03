@@ -8,6 +8,8 @@ WeasyPrint(PDF 변환)는 건드리지 않는다 — render_html은 순수 Jinja
 """
 from datetime import date
 
+import markupsafe
+
 from app.computation.regime.dashboard_context import build_macro_regime_context
 from app.db.base import SessionLocal
 from app.rendering.pdf_service import render_html
@@ -52,3 +54,33 @@ def test_macro_regime_template_includes_cross_asset_section_when_available():
 
     if context["cross_asset_available"]:
         assert "CROSS-ASSET VIEW" in html
+
+
+def test_macro_regime_template_includes_narrative_section_when_available():
+    db = SessionLocal()
+    try:
+        context = build_macro_regime_context(db, date.today())
+    finally:
+        db.close()
+
+    html = render_html("macro_regime/report.html", context)
+
+    if context["narrative_available"]:
+        assert "OBSERVATIONS" in html
+        for sentence in context["narrative_sentences"]:
+            # Jinja autoescape가 문장 속 작은따옴표를 &#39;로 바꾼다 — 원본이
+            # 아니라 이스케이프된 형태로 존재하는지 확인해야 한다.
+            assert markupsafe.escape(sentence) in html
+
+
+def test_macro_regime_template_includes_analog_section_when_available():
+    db = SessionLocal()
+    try:
+        context = build_macro_regime_context(db, date.today())
+    finally:
+        db.close()
+
+    html = render_html("macro_regime/report.html", context)
+
+    if context["analog_available"]:
+        assert "HISTORICAL ANALOGS" in html

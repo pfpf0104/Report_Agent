@@ -23,6 +23,8 @@ def test_build_macro_regime_context_smoke():
     assert context["as_of"] == "2026-07-30"
     assert "regime_available" in context
     assert "cross_asset_available" in context
+    assert "narrative_available" in context
+    assert "analog_available" in context
     assert len(context["strategy_summaries"]) == 3
 
     titles = {s["title"] for s in context["strategy_summaries"]}
@@ -64,3 +66,20 @@ def test_build_macro_regime_context_reuses_regime_and_cross_asset_keys():
     if context["cross_asset_available"]:
         assert "cross_asset_labels" in context
         assert "cross_asset_heatmap_chart_uri" in context
+
+
+def test_build_macro_regime_context_narrative_and_analog_shapes():
+    """narrative.py/analog.py는 별도 엔진이므로 각자 독립적인 available
+    플래그와 disclosure 문구를 갖는다 — 병합 배선이 끊기지 않았는지 확인."""
+    db = SessionLocal()
+    try:
+        context = build_macro_regime_context(db, date(2026, 7, 30))
+    finally:
+        db.close()
+
+    if context["narrative_available"]:
+        assert "narrative_sentences" in context
+        assert "narrative_disclosure" in context
+    if context["analog_available"]:
+        assert "analog_current_quadrant" in context
+        assert "analog_disclosure" in context
