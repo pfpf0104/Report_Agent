@@ -261,6 +261,7 @@ def build_callrank_context(db: Session, as_of: date, leading_sector_seed: str = 
             **build_portfolio_context(db, as_of, [], SECTOR_ETF_BY_NAME),
             **build_cross_asset_report_context(db, as_of),
             **build_regime_report_context(db, as_of),
+            **build_disclosure_report_context("callrank"),
         }
 
     top_sector = ranking["normalized_direction"][0]["sector"]

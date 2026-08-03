@@ -3,6 +3,7 @@ from datetime import date
 import numpy as np
 import pytest
 
+from app.computation.quant import ridge_sector_rank
 from app.computation.quant.ridge_sector_rank import (
     MIN_ELIGIBLE_SECTORS,
     aggregate_company_to_sector,
@@ -118,3 +119,24 @@ def test_build_callrank_context_smoke():
     else:
         assert "gips_requirements" in context
         assert len(context["gips_requirements"]) == 3
+
+
+def test_build_callrank_context_includes_disclosure_when_ranking_is_pending(monkeypatch):
+    """랭킹이 '판단 보류'(eligible=False)일 때도 공시·계보 페이지는 빠지면
+    안 된다 — build_callrank_context의 두 반환 분기 중 하나에만 disclosure
+    병합이 빠져 있던 회귀를 잡는다."""
+    monkeypatch.setattr(
+        ridge_sector_rank,
+        "run_sector_ranking",
+        lambda as_of, leading_sector_seed="Energy": {"eligible": False, "reason": "테스트로 강제한 보류"},
+    )
+
+    db = SessionLocal()
+    try:
+        context = build_callrank_context(db, date(2026, 7, 30))
+    finally:
+        db.close()
+
+    assert context["ranking_rows"] == []
+    assert context["disclosure_available"] is True
+    assert "lineage_rows" in context
