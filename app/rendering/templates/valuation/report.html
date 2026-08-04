@@ -58,6 +58,64 @@
   {{ report_footer("과거 사이클 사례는 정성적 참고이며 확률가중치를 기계적으로 도출하지 않았다") }}
 </div>
 
+{% if scenario_rationale_available %}
+<div class="page">
+  <div class="top-bar"></div>
+  <div class="page-body">
+    {{ report_header(
+      "SCENARIO PROBABILITY RATIONALE",
+      "확률가중치 20/50/25/5%의 근거",
+      "왜 이 배분인지를 정성적 근거와, 배분 자체를 흔들었을 때의 적정가 민감도로 함께 보여준다.",
+      ["통계적으로 재도출한 값이 아니다"]
+    ) }}
+
+    {{ callout_box("warning", "이 표가 말하지 않는 것", scenario_rationale_disclosure) }}
+
+    <table class="data-table" style="margin-top:8px;">
+      <thead>
+        <tr><th>시나리오</th><th>확률가중치</th><th>과거 사이클 대응</th><th>이 확률을 배정한 근거</th></tr>
+      </thead>
+      <tbody>
+        {% for row in scenario_rationale_rows %}
+        <tr>
+          <td>{{ row.scenario }}</td>
+          <td>{{ "%.0f"|format(row.weight * 100) }}%</td>
+          <td>{{ row.historical_analog }}</td>
+          <td>{{ row.why_this_weight }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <div style="margin-top:16px; font-weight:700; font-size:9.5px; color:#1f2933;">중심 시나리오(점진적 추격) 확률 민감도 — ±10%p 흔들었을 때 적정가</div>
+    <div style="font-weight:700; font-size:9px; color:#52606d; margin-top:8px;">{{ samsung.name }}</div>
+    <table class="data-table" style="margin-top:4px;">
+      <thead>
+        <tr><th>중심 시나리오 확률</th><th>적정가격</th><th>기준 대비</th></tr>
+      </thead>
+      <tbody>
+        {% for row in samsung_probability_sensitivity_rows %}
+        <tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <div style="font-weight:700; font-size:9px; color:#52606d; margin-top:12px;">{{ hynix.name }}</div>
+    <table class="data-table" style="margin-top:4px;">
+      <thead>
+        <tr><th>중심 시나리오 확률</th><th>적정가격</th><th>기준 대비</th></tr>
+      </thead>
+      <tbody>
+        {% for row in hynix_probability_sensitivity_rows %}
+        <tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <div class="chart-caption">가격전쟁 시나리오와 확률을 주고받아 이동 — 나머지 두 시나리오 확률은 고정.</div>
+  </div>
+  {{ report_footer("계산: app/computation/valuation/scenario_rationale.py") }}
+</div>
+{% endif %}
+
 {% if industry_available %}
 <div class="page">
   <div class="top-bar"></div>

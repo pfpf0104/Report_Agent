@@ -160,6 +160,10 @@ def test_build_valuation_context_includes_new_pages_data():
         "lineage_rows",
         "industry_available",
         "industry_structure_cards",
+        "scenario_rationale_available",
+        "scenario_rationale_rows",
+        "samsung_probability_sensitivity_rows",
+        "hynix_probability_sensitivity_rows",
     ):
         assert key in context, f"{key} 누락"
 
@@ -187,6 +191,7 @@ def test_valuation_report_template_renders_industry_and_disclosure_pages():
     assert "INDUSTRY AND COMPETITION" in html
     assert "방법론 한계 및 공시" in html
     assert "핵심 수치의 출처·계산 경로" in html
+    assert "SCENARIO PROBABILITY RATIONALE" in html
     if context["industry_micron_available"]:
         assert "마이크론" in html
     else:

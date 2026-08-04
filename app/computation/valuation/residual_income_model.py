@@ -407,6 +407,11 @@ def _assumption_rows(company: dict, scenarios: list[RimScenario]) -> list[list[s
 
 
 def build_valuation_context(db: Session, as_of: date) -> dict:
+    # scenario_rationale.py를 모듈 최상단에서 임포트하면 순환 임포트가 된다 —
+    # 그 모듈이 RimScenario/compute_rim_value를 쓰려고 이 모듈을 다시 임포트하기
+    # 때문이다(industry_context.py는 이 모듈의 이름을 쓰지 않아 문제가 없었다).
+    from app.computation.valuation.scenario_rationale import build_scenario_rationale_context
+
     samsung = _company_row(db, "삼성전자", SAMSUNG_SCENARIOS, as_of)
     hynix = _company_row(db, "SK하이닉스", SK_HYNIX_SCENARIOS, as_of)
 
@@ -483,4 +488,5 @@ def build_valuation_context(db: Session, as_of: date) -> dict:
         **build_regime_report_context(db, as_of),
         **build_disclosure_report_context("valuation"),
         **build_industry_context(db, as_of, samsung, hynix),
+        **build_scenario_rationale_context(samsung, hynix, SAMSUNG_SCENARIOS, SK_HYNIX_SCENARIOS),
     }
