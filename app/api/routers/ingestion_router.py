@@ -19,6 +19,7 @@ from app.ingestion.jobs import (
     ingest_korean_equity_prices,
     ingest_macro_indicators,
     ingest_macro_rates,
+    ingest_micron_financials,
     ingest_real_estate_deals,
 )
 
@@ -38,6 +39,7 @@ _JOBS = {
     "global_rates": ingest_global_rates,
     "macro_indicators": ingest_macro_indicators,
     "financial_statements": ingest_financial_statements,
+    "micron_financials": ingest_micron_financials,
     "real_estate_deals": ingest_real_estate_deals,
     # 5년 히스토리 백필(Phase 0-2). 매일 도는 스케줄러 대상이 아니라 일회성/
     # 재해복구용이라 별도 job 이름으로 등록한다 — 전부 재개 가능(idempotent)해

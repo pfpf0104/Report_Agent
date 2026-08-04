@@ -33,6 +33,7 @@ from sqlalchemy.orm import Session
 
 from app.computation.disclosure.report_context import build_disclosure_report_context
 from app.computation.regime.report_context import build_regime_report_context
+from app.computation.valuation.industry_context import build_industry_context
 from app.computation.risk.cross_asset import build_cross_asset_report_context
 from app.db.models.dim_asset import DimAsset
 from app.db.models.fact_financial_quarterly import FactFinancialQuarterly
@@ -481,4 +482,5 @@ def build_valuation_context(db: Session, as_of: date) -> dict:
         **build_cross_asset_report_context(db, as_of),
         **build_regime_report_context(db, as_of),
         **build_disclosure_report_context("valuation"),
+        **build_industry_context(db, as_of, samsung, hynix),
     }

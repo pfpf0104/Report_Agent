@@ -51,3 +51,27 @@ async def fetch_profile(client: httpx.AsyncClient, symbol: str) -> dict:
     if not payload:
         raise FmpApiError(f"FMP에 {symbol} profile 데이터 없음")
     return payload[0]
+
+
+async def fetch_key_metrics(
+    client: httpx.AsyncClient, symbol: str, *, period: str = "annual", limit: int = 5
+) -> list[dict]:
+    """연도별 핵심 재무지표(ROE·BPS 등)를 최신순으로 반환한다.
+
+    FMP 공식 문서(/stable/key-metrics) 기준 응답 필드: date, fiscalYear, period,
+    returnOnEquity(소수, 0.25=25%), bookValuePerShare 등. 한국 종목(DART)과 달리
+    미국 상장사는 이 엔드포인트 하나로 ROE·BPS를 직접 받는다 — 자본총계를
+    발행주식총수로 나누는 별도 계산이 필요 없다.
+    """
+    api_key = _require_api_key()
+    url = f"{BASE_URL}/key-metrics"
+    response = await request_with_retry(
+        client, "GET", url, params={"symbol": symbol, "period": period, "limit": limit, "apikey": api_key}
+    )
+    response.raise_for_status()
+    archive_raw_response("fmp", url, response.content)
+
+    payload = response.json()
+    if not payload:
+        raise FmpApiError(f"FMP에 {symbol} key-metrics 데이터 없음")
+    return payload

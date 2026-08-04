@@ -58,6 +58,41 @@
   {{ report_footer("과거 사이클 사례는 정성적 참고이며 확률가중치를 기계적으로 도출하지 않았다") }}
 </div>
 
+{% if industry_available %}
+<div class="page">
+  <div class="top-bar"></div>
+  <div class="page-body">
+    {{ report_header(
+      "INDUSTRY AND COMPETITION",
+      "메모리 3강 구조에서 삼성전자·SK하이닉스의 위치",
+      "산업 구조는 정성적 참고, 장부가치 비교는 실측이다 — 둘을 섞지 않는다.",
+      ["CFA Institute 표준 리서치 리포트 필수 섹션"]
+    ) }}
+
+    <div style="font-weight:700; font-size:9.5px; color:#1f2933;">산업 구조 (정성적 참고)</div>
+    {{ info_cards(industry_structure_cards) }}
+
+    {% if industry_micron_available %}
+    <div style="margin-top:16px; font-weight:700; font-size:9.5px; color:#1f2933;">장부가치(BPS) — 실측 비교</div>
+    <table class="data-table" style="margin-top:4px;">
+      <thead>
+        <tr><th>기업</th><th>BPS</th><th>출처</th></tr>
+      </thead>
+      <tbody>
+        {% for row in industry_bps_rows %}
+        <tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {{ callout_box("warning", "이 표가 말하지 않는 것", industry_bps_disclosure) }}
+    {% else %}
+    {{ callout_box("warning", "마이크론 데이터 없음", industry_micron_data_status) }}
+    {% endif %}
+  </div>
+  {{ report_footer("계산: app/computation/valuation/industry_context.py — 마이크론 BPS는 FMP 실측") }}
+</div>
+{% endif %}
+
 <div class="page">
   <div class="top-bar"></div>
   <div class="page-body">

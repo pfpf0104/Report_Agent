@@ -158,6 +158,8 @@ def test_build_valuation_context_includes_new_pages_data():
         "regime_available",
         "disclosure_available",
         "lineage_rows",
+        "industry_available",
+        "industry_structure_cards",
     ):
         assert key in context, f"{key} 누락"
 
@@ -167,3 +169,25 @@ def test_build_valuation_context_includes_new_pages_data():
         company = context[company_key]
         assert company["roe_chart_uri"].startswith("data:image/png;base64,")
         assert len(company["risk_cards"]) == 3
+
+
+def test_valuation_report_template_renders_industry_and_disclosure_pages():
+    """Phase 4-2/4-3/4-4 신규 페이지가 실제로 렌더링되는지 — 컨텍스트 키만
+    맞고 템플릿이 다른 이름을 참조하면 Jinja가 조용히 빈 문자열을 낸다."""
+    from app.rendering.pdf_service import render_html
+
+    db = SessionLocal()
+    try:
+        context = build_valuation_context(db, date(2026, 7, 30))
+    finally:
+        db.close()
+
+    html = render_html("valuation/report.html", context)
+
+    assert "INDUSTRY AND COMPETITION" in html
+    assert "방법론 한계 및 공시" in html
+    assert "핵심 수치의 출처·계산 경로" in html
+    if context["industry_micron_available"]:
+        assert "마이크론" in html
+    else:
+        assert context["industry_micron_data_status"] in html
