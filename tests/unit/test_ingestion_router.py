@@ -28,6 +28,7 @@ def test_all_backfill_jobs_are_registered():
         "backfill_equity_prices",
         "backfill_korean_equity_prices",
         "backfill_financial_statements",
+        "backfill_housing_indicators",
     }
     assert expected <= set(ingestion_router._JOBS.keys())
 
@@ -36,6 +37,7 @@ def test_daily_jobs_still_registered():
     expected = {
         "equity_prices", "korean_equity_prices", "macro_rates", "global_rates",
         "macro_indicators", "financial_statements", "real_estate_deals",
+        "micron_financials", "housing_indicators",
     }
     assert expected <= set(ingestion_router._JOBS.keys())
 

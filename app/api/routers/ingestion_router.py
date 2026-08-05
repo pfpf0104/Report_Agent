@@ -10,12 +10,14 @@ from app.ingestion.jobs import (
     backfill_equity_prices,
     backfill_financial_statements,
     backfill_global_rates,
+    backfill_housing_indicators,
     backfill_korean_equity_prices,
     backfill_macro_indicators,
     backfill_macro_rates,
     ingest_equity_prices,
     ingest_financial_statements,
     ingest_global_rates,
+    ingest_housing_indicators,
     ingest_korean_equity_prices,
     ingest_macro_indicators,
     ingest_macro_rates,
@@ -40,6 +42,7 @@ _JOBS = {
     "macro_indicators": ingest_macro_indicators,
     "financial_statements": ingest_financial_statements,
     "micron_financials": ingest_micron_financials,
+    "housing_indicators": ingest_housing_indicators,
     "real_estate_deals": ingest_real_estate_deals,
     # 5년 히스토리 백필(Phase 0-2). 매일 도는 스케줄러 대상이 아니라 일회성/
     # 재해복구용이라 별도 job 이름으로 등록한다 — 전부 재개 가능(idempotent)해
@@ -50,6 +53,7 @@ _JOBS = {
     "backfill_equity_prices": backfill_equity_prices,
     "backfill_korean_equity_prices": backfill_korean_equity_prices,
     "backfill_financial_statements": backfill_financial_statements,
+    "backfill_housing_indicators": backfill_housing_indicators,
 }
 
 

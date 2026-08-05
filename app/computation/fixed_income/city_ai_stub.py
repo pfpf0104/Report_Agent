@@ -6,10 +6,12 @@ City AI는 한국 금리곡선(19개 입력)·글로벌 금리(21개)·미국 �
 3년 금리변화를 예측한다(첨부 MetroGuard-KR 보고서 7페이지).
 
 app/computation/fixed_income/global_rate_model.py가 이 방법론(표준화→PCA-8→
-Ridge λ=10)을 한국 금리 2개 + 미국 금리곡선·매크로 지표 15개(총 17개 입력,
-원본의 49개에는 못 미침 — 주택 지표는 아직 미소싱)로 실제 구현했다. 이
-함수는 그 모델을 우선 호출하고, 실패하면(이력 부족·자산 없음) 합성값으로
-폴백한다 — RIM의 KIS 현재가/DART BPS와 동일한 실측 우선 패턴이다.
+Ridge λ=10)을 한국 금리 2개 + 미국 금리곡선·매크로 지표 15개 + 미국 주택
+지표 9개(총 26개 입력, 원본의 49개에는 못 미침 — 원본 보고서 PDF가 저장소에
+없어 정확히 같은 시리즈는 아니다, ingest_housing_indicators.py docstring
+참고)로 실제 구현했다. 이 함수는 그 모델을 우선 호출하고, 실패하면(이력
+부족·자산 없음) 합성값으로 폴백한다 — RIM의 KIS 현재가/DART BPS와 동일한
+실측 우선 패턴이다.
 
 yield_1y_bp/yield_3y_bp(현재 금리커브)도 같은 원칙 — 이건 "예측"이 아니라
 "지금 알려진 값"이라 BOK ECOS(ingest_macro_rates.py, KTB1Y/KTB3Y)가 이미

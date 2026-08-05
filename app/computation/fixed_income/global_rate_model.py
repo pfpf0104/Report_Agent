@@ -7,13 +7,23 @@ MetroGuard-KR 보고서 7페이지 방법론: 60개월 워크포워드로 매월
 ## 이 모듈이 재현하는 것과 재현하지 않는 것
 
 원본은 49개 입력(한국 금리곡선 19개·글로벌 금리 21개·미국 전국 주택 3개·
-미국 도시 주택 6개)을 쓴다. 이 프로젝트는 그중 실측 소싱이 가능한 두 그룹만
-쓴다 — 한국 금리(KTB1Y·KTB3Y, 2개)와 미국 금리곡선·매크로 지표
+미국 도시 주택 6개)을 쓴다. 이 프로젝트는 그중 실측 소싱이 가능한 세 그룹을
+쓴다 — 한국 금리(KTB1Y·KTB3Y, 2개), 미국 금리곡선·매크로 지표
 (ingest_global_rates.py의 15개, USHYSPREAD 제외 — 아래 _EXCLUDED_FROM_TRAINING
-참고). 주택 지표(Zillow ZHVI 등)는 아직 소싱하지 않았다 — city_ai_stub.py
-TODO 참고. 총 17개 입력으로, 원본의 49개에는 못 미치지만 "PCA-8 압축 →
-Ridge로 미래 금리변화를 예측한다"는 방법론 자체는 동일한 알고리즘으로
-재현한다.
+참고), 미국 주택가격 지표(ingest_housing_indicators.py의 9개, 전국 3+도시 6,
+원본과 시리즈가 정확히 일치하지는 않음 — 그 모듈 docstring 참고). 총 26개
+입력으로, 원본의 49개에는 못 미치지만 "PCA-8 압축 → Ridge로 미래 금리변화를
+예측한다"는 방법론 자체는 동일한 알고리즘으로 재현한다.
+
+## 월간 지표를 일별 시계열에 맞추는 방법 — forward-fill
+
+주택 지표는 월간·분기 발표라 한 달에 관측치가 1개뿐이다. 다른 일별 금리
+시리즈와 "정확히 같은 날짜"로 교집합을 구하면 공통 거래일이 사실상 0에
+가까워진다(월간 관측일과 거래일이 우연히 일치하는 날만 남기 때문). 대신
+`_forward_fill_monthly()`가 각 월간 관측치를 "다음 관측치가 나올 때까지"
+그대로 들고 있는 일별 시리즈로 바꾼다 — look-ahead가 아니다. 특정 거래일에
+쓰는 값은 항상 그 날짜에 이미 공표된(knowledge_date ≤ 그 날짜) 가장 최근
+관측치이므로, 실제로 그 시점에 알 수 있었던 값만 쓴다.
 
 ## 학습창을 60개월이 아닌 36개월로 둔 이유
 
@@ -86,11 +96,42 @@ _EXCLUDED_FROM_TRAINING = {"USHYSPREAD"}
 
 
 def _all_input_codes() -> list[str]:
-    from app.ingestion.jobs.ingest_global_rates import ALL_SERIES
+    from app.ingestion.jobs.ingest_global_rates import ALL_SERIES as GLOBAL_RATE_ALL_SERIES
+    from app.ingestion.jobs.ingest_housing_indicators import ALL_SERIES as HOUSING_ALL_SERIES
 
-    return KOREAN_RATE_CODES + [
-        c for c in ALL_SERIES.keys() if c not in _EXCLUDED_FROM_TRAINING
-    ]
+    return (
+        KOREAN_RATE_CODES
+        + [c for c in GLOBAL_RATE_ALL_SERIES.keys() if c not in _EXCLUDED_FROM_TRAINING]
+        + list(HOUSING_ALL_SERIES.keys())
+    )
+
+
+def _monthly_input_codes() -> set[str]:
+    """일별이 아니라 월간·분기로 발표되는 입력 — load_global_rate_features가
+    이 코드들만 forward-fill한다(일별 시리즈는 그대로 둔다)."""
+    from app.ingestion.jobs.ingest_housing_indicators import ALL_SERIES as HOUSING_ALL_SERIES
+
+    return set(HOUSING_ALL_SERIES.keys())
+
+
+def _forward_fill_monthly(observations: dict[date, float], daily_dates: list[date]) -> dict[date, float]:
+    """월간 관측치를 다음 관측치가 나오기 전까지 유지하는 일별 시리즈로 바꾼다.
+
+    daily_dates는 오름차순으로 정렬된 날짜 목록(다른 일별 자산들의 거래일)이다.
+    각 daily_date에 대해 그 날짜 이전(이하)에 알려진 가장 최근 관측치를 쓴다 —
+    아직 관측치가 없는 daily_date는 결과에서 제외한다(look-ahead 방지).
+    """
+    sorted_obs_dates = sorted(observations)
+    filled: dict[date, float] = {}
+    obs_idx = 0
+    latest_value: float | None = None
+    for d in daily_dates:
+        while obs_idx < len(sorted_obs_dates) and sorted_obs_dates[obs_idx] <= d:
+            latest_value = observations[sorted_obs_dates[obs_idx]]
+            obs_idx += 1
+        if latest_value is not None:
+            filled[d] = latest_value
+    return filled
 
 
 @dataclass(frozen=True)
@@ -103,7 +144,7 @@ class GlobalRateFeatures:
 
 
 def load_global_rate_features(
-    db: Session, as_of: date, codes: list[str] | None = None
+    db: Session, as_of: date, codes: list[str] | None = None, monthly_codes: set[str] | None = None
 ) -> GlobalRateFeatures:
     """as_of 시점에 알 수 있었던 금리·매크로 지표를 공통 거래일로 정렬해 가져온다.
 
@@ -113,9 +154,11 @@ def load_global_rate_features(
     금리 수준 자체가 PCA-Ridge의 입력이기 때문이다(가격 계열과 다른 성격).
 
     codes를 생략하면 _all_input_codes()(실제 운영 자산: KTB1Y/KTB3Y + 미국
-    금리곡선 15개)를 쓴다. 테스트에서 격리된 코드 목록을 주입할 수 있다 —
-    운영 DB의 KTB1Y/KTB3Y에 의존하면 다른 테스트 파일의 teardown이 그 자산을
-    지웠을 때 실행 순서에 따라 실패하는 취약한 테스트가 된다(2026-08 실측).
+    금리곡선 15개 + 미국 주택 지표 9개)를 쓴다. monthly_codes를 생략하면
+    _monthly_input_codes()(실제 운영 자산: 주택 지표 9개)를 쓴다. 둘 다
+    테스트에서 격리된 목록을 주입할 수 있다 — 운영 DB의 KTB1Y/KTB3Y에
+    의존하면 다른 테스트 파일의 teardown이 그 자산을 지웠을 때 실행 순서에
+    따라 실패하는 취약한 테스트가 된다(2026-08 실측).
     """
     codes = codes if codes is not None else _all_input_codes()
     by_code: dict[str, dict[date, float]] = {}
@@ -140,13 +183,44 @@ def load_global_rate_features(
     if not present:
         return GlobalRateFeatures(codes=[], dates=[], values=np.empty((0, 0)))
 
-    common = set(by_code[present[0]])
-    for code in present[1:]:
-        common &= set(by_code[code])
-    common_dates = sorted(common)
+    monthly_codes = monthly_codes if monthly_codes is not None else _monthly_input_codes()
+    daily_present = [c for c in present if c not in monthly_codes]
+    monthly_present = [c for c in present if c in monthly_codes]
 
-    values = np.array([[by_code[c][d] for c in present] for d in common_dates], dtype=float)
-    return GlobalRateFeatures(codes=present, dates=common_dates, values=values)
+    if not daily_present:
+        # 전부 월간 지표뿐이면(테스트 등) 그대로 정확한 날짜 교집합으로 처리한다
+        # — forward-fill할 일별 날짜 축 자체가 없다.
+        common = set(by_code[present[0]])
+        for code in present[1:]:
+            common &= set(by_code[code])
+        common_dates = sorted(common)
+        values = np.array([[by_code[c][d] for c in present] for d in common_dates], dtype=float)
+        return GlobalRateFeatures(codes=present, dates=common_dates, values=values)
+
+    # 일별 시리즈끼리는 정확한 날짜 교집합, 월간 시리즈는 그 날짜 축에 맞춰
+    # forward-fill한다 — 위 모듈 docstring 참고.
+    common = set(by_code[daily_present[0]])
+    for code in daily_present[1:]:
+        common &= set(by_code[code])
+    daily_common_dates = sorted(common)
+
+    filled_monthly = {
+        code: _forward_fill_monthly(by_code[code], daily_common_dates) for code in monthly_present
+    }
+    # forward-fill 후에도 시작 시점 이전(첫 관측치보다 이른 날짜)은 값이 없을 수
+    # 있다 — 그런 날짜는 여전히 제외해야 하므로 다시 교집합을 구한다.
+    common_dates = daily_common_dates
+    for code in monthly_present:
+        common_dates = [d for d in common_dates if d in filled_monthly[code]]
+
+    values = np.array(
+        [
+            [by_code[c][d] for c in daily_present] + [filled_monthly[c][d] for c in monthly_present]
+            for d in common_dates
+        ],
+        dtype=float,
+    )
+    return GlobalRateFeatures(codes=daily_present + monthly_present, dates=common_dates, values=values)
 
 
 @dataclass(frozen=True)

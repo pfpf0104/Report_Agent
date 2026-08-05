@@ -24,6 +24,7 @@ from app.computation.fixed_income.global_rate_model import (
     TRAINING_WINDOW_TRADING_DAYS,
     GlobalRateFeatures,
     _build_training_set,
+    _forward_fill_monthly,
     fit_walk_forward_ridge,
     load_global_rate_features,
     predict_latest,
@@ -122,6 +123,65 @@ def test_load_global_rate_features_keeps_only_common_dates(db):
     features = load_global_rate_features(db, date(2099, 1, 1), codes=[TEST_TARGET_CODE, "_GRM_F0"])
 
     assert features.values.shape[0] == 6
+
+
+def test_load_global_rate_features_forward_fills_monthly_codes_onto_daily_dates(db):
+    """일별 시리즈(_GRM_TARGET)와 월간 시리즈(_GRM_F0, monthly_codes로 지정)를
+    섞으면, 월간 값이 정확한 날짜 교집합이 아니라 forward-fill로 합쳐져야 한다
+    — 그렇지 않으면 공통 거래일이 사실상 0에 가까워진다(모듈 docstring 참고)."""
+    daily_dates = _business_days(40)  # 매 거래일 값이 있는 일별 시리즈
+    _seed(db, TEST_TARGET_CODE, daily_dates, [100.0] * 40)
+
+    # 월간 관측치: 첫 거래일과 20번째 거래일에만 값이 있다(한 달에 1번꼴 근사).
+    monthly_dates = [daily_dates[0], daily_dates[20]]
+    _seed(db, "_GRM_F0", monthly_dates, [10.0, 20.0])
+
+    features = load_global_rate_features(
+        db, daily_dates[-1], codes=[TEST_TARGET_CODE, "_GRM_F0"], monthly_codes={"_GRM_F0"}
+    )
+
+    # forward-fill 덕에 첫 관측치 이후 모든 거래일이 살아남아야 한다(정확한
+    # 날짜 교집합이었다면 2일만 남았을 것).
+    assert features.values.shape[0] == 40
+    monthly_col = features.codes.index("_GRM_F0")
+    values_by_date = dict(zip(features.dates, features.values[:, monthly_col]))
+    assert values_by_date[daily_dates[0]] == 10.0
+    assert values_by_date[daily_dates[10]] == 10.0  # 다음 관측치 전까지 이전 값 유지
+    assert values_by_date[daily_dates[20]] == 20.0
+    assert values_by_date[daily_dates[-1]] == 20.0
+
+
+# --- 월간 지표 forward-fill (순수 함수, DB 불필요) ------------------------------
+
+
+def test_forward_fill_monthly_carries_value_until_next_observation():
+    observations = {date(2024, 1, 31): 100.0, date(2024, 2, 29): 105.0}
+    daily_dates = [date(2024, 1, 31), date(2024, 2, 1), date(2024, 2, 15), date(2024, 2, 29), date(2024, 3, 1)]
+
+    filled = _forward_fill_monthly(observations, daily_dates)
+
+    assert filled[date(2024, 1, 31)] == 100.0
+    assert filled[date(2024, 2, 1)] == 100.0  # 다음 관측치(2/29) 전까지 1/31 값 유지
+    assert filled[date(2024, 2, 15)] == 100.0
+    assert filled[date(2024, 2, 29)] == 105.0  # 새 관측치 반영
+    assert filled[date(2024, 3, 1)] == 105.0
+
+
+def test_forward_fill_monthly_excludes_dates_before_first_observation():
+    """look-ahead 방지 — 첫 관측치보다 이른 날짜는 아직 아무것도 몰랐으므로
+    결과에 아예 없어야 한다(0이나 다른 값으로 채우면 안 된다)."""
+    observations = {date(2024, 2, 29): 105.0}
+    daily_dates = [date(2024, 1, 1), date(2024, 1, 31), date(2024, 2, 29)]
+
+    filled = _forward_fill_monthly(observations, daily_dates)
+
+    assert date(2024, 1, 1) not in filled
+    assert date(2024, 1, 31) not in filled
+    assert filled[date(2024, 2, 29)] == 105.0
+
+
+def test_forward_fill_monthly_empty_observations_returns_empty():
+    assert _forward_fill_monthly({}, [date(2024, 1, 1), date(2024, 1, 2)]) == {}
 
 
 # --- 학습 세트 구성 (순수 함수, DB 불필요) -------------------------------------
