@@ -153,4 +153,9 @@ def test_run_records_success_even_when_no_data_found(db):
 
     run_log = db.query(IngestionRun).filter_by(source="dart_financial_statements").order_by(IngestionRun.id.desc()).first()
     assert run_log.status == "success"
-    assert db.query(FactFinancialQuarterly).count() == 0
+    # 전역 count가 아니라 이 job이 다루는 자산(005930/000660)만 본다 — 다른
+    # 자산(예: 마이크론)의 fact_financial_quarterly 행이 있어도 이 회귀
+    # 테스트와 무관하다.
+    codes = list(job.STOCK_CODE.values())
+    asset_ids = db.query(DimAsset.asset_id).filter(DimAsset.code.in_(codes))
+    assert db.query(FactFinancialQuarterly).filter(FactFinancialQuarterly.asset_id.in_(asset_ids)).count() == 0

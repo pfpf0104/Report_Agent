@@ -298,26 +298,40 @@ macro_regime 리포트에는 이미 비슷한 DISCLOSURE 페이지가 있었지�
 CallRank 쪽 근거는 여전히 부족하다 — G3가 해소돼 실제 transcript 임베딩
 기반 신호가 되면 재검토한다.
 
-**4-4 구현 중 새로 추가한 인제스천 파이프라인 — 마이크론 재무.** 이 프로젝트에는
-경쟁사(마이크론) 데이터가 전혀 없어 "산업·경쟁 분석"을 정성적 서술로만 채우거나
-G2를 위반하는 두 선택지밖에 없었다. FMP `/stable/key-metrics` 엔드포인트가
-ROE·BPS를 이미 계산된 값으로 제공한다는 걸 확인해(`fmp_client.fetch_key_metrics`
-신규), `ingest_micron_financials.py`(신규 job, `micron_financials`로 트리거
-등록)를 추가했다 — DART처럼 자본총계÷발행주식총수를 직접 계산할 필요가 없다.
-단, 이 세션은 네트워크가 막혀 있어(residual_income_model.py 기존 docstring과
-동일한 제약) 실제 FMP 응답 구조를 라이브 검증하지 못했다 — respx로 모킹한
-통합 테스트는 전부 통과하지만, 네트워크가 열린 환경에서 `POST
-/ingestion/trigger/micron_financials` 1회 실행 후 `fact_financial_quarterly`에
-`source="fmp"` 행이 기대한 형태(BPS가 USD 스케일, ROE가 소수)로 들어오는지
-확인이 필요하다.
+**4-4 구현 중 새로 추가한 인제스천 파이프라인 — 마이크론 재무(SEC EDGAR로 교체).**
+이 프로젝트에는 경쟁사(마이크론) 데이터가 전혀 없어 "산업·경쟁 분석"을 정성적
+서술로만 채우거나 G2를 위반하는 두 선택지밖에 없었다. 처음에는 FMP
+`/stable/key-metrics`로 ROE·BPS를 직접 받으려 했으나, 2026-08 라이브 검증에서
+이 프로젝트의 FMP 플랜이 **MU 심볼만** 402(구독 필요)로 막고 있음을 확인했다
+(INTC/AMD/TSLA/MSFT 등 다른 대형주는 전부 정상 응답 — 플랜 전체가 아니라
+심볼별 프리미엄 제한). AAPL 응답에서도 `bookValuePerShare` 필드가 `None`으로
+비어 있어(2026-08 실측), 설령 접근이 됐어도 이 필드를 쓸 수는 없었다.
 
-**4-4에서 ROE를 비교하지 않은 이유.** 마이크론은 FMP에서 ROE를 실측으로 받지만,
-삼성전자·SK하이닉스는 DART 응답(`fnlttSinglAcntAll`)에 당기순이익 계정이 있어도
-`dart_client.py`가 지금 BPS(자본총계)만 뽑고 있어 실측 ROE가 없다 — RIM 시나리오의
-ROE는 전부 미래 예측 가정치다. 마이크론(실측)과 삼성전자·SK하이닉스(가정치)를
-같은 표에 놓으면 "실측 대 실측"처럼 보이는 오해를 유발하므로, 이번 범위에서는
-장부가치(BPS)만 3사 실측 비교하고 ROE 비교는 제외했다 — 확장하려면
-`dart_client.py`에 당기순이익 추출과 ROE 계산을 추가해야 한다(별도 작업).
+SEC EDGAR company facts API(완전 무료, API 키 불필요, 공식 정부 소스)로
+전환해 `sec_edgar_client.py`(신규)+`ingest_micron_financials.py`(재작성)로
+자기자본(StockholdersEquity)÷발행주식수(CommonStockSharesOutstanding)=BPS,
+순이익(NetIncomeLoss)÷자기자본=ROE를 직접 계산한다 — DART와 같은 방식이다.
+SEC 정책상 User-Agent에 식별 가능한 이메일이 없으면 모든 요청이 403으로
+거부돼(라이브 확인), `REPORT_AGENT_SEC_EDGAR_USER_AGENT` 환경변수로 관리한다.
+
+라이브 실행 중 실제 버그를 하나 잡았다 — SEC는 같은 (fiscal_year, fiscal_quarter)
+라벨에 "당기" 값과 비교 목적의 "전년동기" 값을 같은 공시일(filed)로 함께
+싣는 경우가 있다(2026-08 실측: MU StockholdersEquity의 fy=2026 fp=Q3 응답에
+end=2025-08-28행과 end=2026-05-28 행이 공존). filed만으로 dedup하면 어떤 값이
+선택될지 보장되지 않아 BPS가 잘못 고정되거나 UniqueViolation이 났다 —
+`_dedupe_by_fiscal_period()`가 같은 (fy, fp) 중 **end가 가장 늦은 행**만
+남기도록 고쳐 해결했다(분기가 진행되는 방향과 일치하므로 최신 end가 항상
+그 분기의 실제 마감일). 라이브 검증 결과 49개 분기(2010~2026) BPS가 정상
+적재됐고(예: 2026 Q3 $89.22), 실제 자기자본 증가 추세와 합리적으로 일치한다.
+
+**4-4에서 ROE를 비교하지 않은 이유.** 마이크론은 SEC EDGAR에서 ROE를 실측으로
+받지만, 삼성전자·SK하이닉스는 DART 응답(`fnlttSinglAcntAll`)에 당기순이익
+계정이 있어도 `dart_client.py`가 지금 BPS(자본총계)만 뽑고 있어 실측 ROE가
+없다 — RIM 시나리오의 ROE는 전부 미래 예측 가정치다. 마이크론(실측)과
+삼성전자·SK하이닉스(가정치)를 같은 표에 놓으면 "실측 대 실측"처럼 보이는
+오해를 유발하므로, 이번 범위에서는 장부가치(BPS)만 3사 실측 비교하고 ROE
+비교는 제외했다 — 확장하려면 `dart_client.py`에 당기순이익 추출과 ROE 계산을
+추가해야 한다(별도 작업).
 
 **4-5 설계 원칙 — 근거를 서술하되, 계산 가능한 부분만 계산한다.**
 `scenario_rationale.py`는 두 가지를 분리한다. 확률 배정 근거(왜 점진적 추격이
@@ -370,20 +384,22 @@ ROE는 전부 미래 예측 가정치다. 마이크론(실측)과 삼성전자·
 Phase 0(0-1~0-5)이 전부 끝났고 전 자산 GIPS 5년 요건도 충족한다. Phase 3도
 3-1~3-4 전부 완료돼 크로스에셋 레짐 단계가 마무리됐다. 다음 우선순위:
 
-1. **G4/주택 지표 라이브 검증 + 백필** — `ingest_housing_indicators.py`/
-   `backfill_housing_indicators.py`를 신규 추가했지만(FRED CSUSHPISA·
-   USSTHPI·MSPUS 등 9개 시리즈), 이 세션은 네트워크가 막혀 있어 실제 FRED
-   응답으로 라이브 검증하지 못했다(respx 모킹 테스트만 통과). 네트워크가
-   열린 환경에서 `POST /ingestion/trigger/backfill_housing_indicators`
-   실행 후 `fact_market_daily`에 9개 코드 전부 5년치가 정상 적재되는지,
-   `POST /ingestion/trigger/housing_indicators`(일일 갱신)가 정상 동작하는지
-   확인해야 한다. 학습창은 여전히 원본 60개월 대신 36개월이다(보유 이력이
-   5년뿐이라 60개월+63거래일 라벨 성숙 구간을 채울 수 없음 — 데이터가
-   누적되면 상수만 올리면 됨).
-2. **마이크론 인제스천 라이브 검증** — `ingest_micron_financials.py`는
-   respx 모킹 테스트만 통과했다. 네트워크가 열린 환경에서 실제 FMP
-   key-metrics 응답으로 1회 실행해 BPS/ROE 단위·스케일을 확인해야 한다.
-3. **Phase 4는 4-1(투자의견 헤더박스)만 남았다** — G3(실제 transcript
+1. **운영 데이터 복원** — 이 세션 시점 운영 DB에 한국 금리(KTB1Y/KTB3Y)·
+   미국 금리곡선 등 핵심 자산이 거의 비어 있는 상태였다(라이브 검증 중
+   `dim_asset` 총 2개만 확인). `backfill_macro_rates`/`backfill_global_rates`
+   등 기존 백필 job들을 재실행해 복원해야 `global_rate_model.py`가 26개
+   입력(한국 금리 2+미국 금리곡선 15+주택 9) 전체로 학습할 수 있다 — 지금은
+   주택 지표 9개만 단독으로 로드되고(daily_present가 비어 fallback 경로를
+   탐), forward-fill 통합 자체는 합성 테스트로 이미 검증됐다.
+2. **G4/주택 지표 — 라이브 검증 완료(2026-08).** `ingest_housing_indicators.py`/
+   `backfill_housing_indicators.py`를 실제 FRED API로 실행해 9개 시리즈
+   전부(전국 3+도시 6) 정상 적재를 확인했다(최신 관측치 2026-05, 합리적인
+   지수값). 남은 건 위 1번(다른 입력 복원)뿐이다.
+3. **마이크론 인제스천 — 라이브 검증 완료(2026-08), 단 FMP에서 SEC EDGAR로
+   교체.** FMP `/stable/key-metrics`가 MU 심볼만 402로 막고 있음을 확인해
+   SEC EDGAR company facts API로 전면 재작성했다(위 4-4 설계 노트 참고).
+   49개 분기(2010~2026) BPS·ROE가 정상 적재됨을 실측 확인했다.
+4. **Phase 4는 4-1(투자의견 헤더박스)만 남았다** — G3(실제 transcript
    임베딩)가 실측화되기 전까지 의도적으로 보류(위 설계 노트 참고). G4는
    이제 해소됐으므로 4-1 보류 사유에서 G4는 제외한다. Phase 4의 나머지
    (4-2~4-5)는 전부 완료됐다.

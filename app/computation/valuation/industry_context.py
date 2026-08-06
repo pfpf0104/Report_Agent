@@ -7,14 +7,16 @@ CYCLE_SCENARIO_CARDS)는 D램 사이클 국면만 다루고 경쟁사 비교가 
 ## 무엇이 실측이고 무엇이 정성적 참고인가
 
 - **장부가치(BPS) 비교는 실측이다.** 삼성전자·SK하이닉스는 DART
-  사업보고서(`ingest_financial_statements.py`), 마이크론은 FMP
-  key-metrics(`ingest_micron_financials.py`)에서 각각 실제로 조회한다.
+  사업보고서(`ingest_financial_statements.py`), 마이크론은 SEC EDGAR
+  company facts API(`ingest_micron_financials.py`)에서 각각 실제로
+  조회한다 — FMP `key-metrics`는 2026-08 라이브 검증에서 MU 심볼만 402로
+  막혀 있어(다른 대형주는 정상 응답) SEC EDGAR로 교체했다.
 - **ROE는 이 페이지에서 비교하지 않는다.** 삼성전자·SK하이닉스의 RIM
   시나리오 ROE(residual_income_model.py의 *_SCENARIOS)는 미래 예측
   가정치이지 실적이 아니고, DART 응답에서 실측 ROE를 뽑는 파이프라인은
-  아직 없다(당기순이익 계정 미추출) — 마이크론(FMP 실측 ROE)과 나란히
-  놓으면 "실측 대 가정"을 "실측 대 실측"처럼 보이게 만드는 오해를 유발한다.
-  그래서 ROE는 이 페이지에 넣지 않는다.
+  아직 없다(당기순이익 계정 미추출) — 마이크론(SEC EDGAR 실측 ROE)과
+  나란히 놓으면 "실측 대 가정"을 "실측 대 실측"처럼 보이게 만드는 오해를
+  유발한다. 그래서 ROE는 이 페이지에 넣지 않는다.
 - **시장 점유율·산업 구조(과점 3사 체제 등)는 이 프로젝트에 실측 소스가
   없다.** 정성적 참고로만 서술하고 출처를 명시한다(공개 업계 리포트 요약
   수준 — 통계적으로 추정한 값이 아니다).
@@ -91,7 +93,7 @@ def build_industry_context(db: Session, as_of: date, samsung: dict, hynix: dict)
             "industry_micron_available": False,
             "industry_micron_data_status": (
                 "마이크론 BPS 데이터 없음 — ingest_micron_financials.py 미실행 또는 "
-                "FMP 응답 없음"
+                "SEC EDGAR 응답 없음"
             ),
         }
 
@@ -103,7 +105,7 @@ def build_industry_context(db: Session, as_of: date, samsung: dict, hynix: dict)
         "industry_bps_rows": [
             ["삼성전자", f"{samsung['book_value']:,.0f}원", samsung["book_value_source"]],
             ["SK하이닉스", f"{hynix['book_value']:,.0f}원", hynix["book_value_source"]],
-            ["마이크론", f"${micron_bps_usd:,.2f}", f"FMP {fiscal_year} Q{fiscal_quarter} 실측 BPS"],
+            ["마이크론", f"${micron_bps_usd:,.2f}", f"SEC EDGAR {fiscal_year} Q{fiscal_quarter} 실측 BPS"],
         ],
         "industry_bps_disclosure": (
             "장부가치는 통화가 서로 달라(원화 vs 미국 달러) 절대금액으로 직접 "

@@ -26,6 +26,10 @@ class Settings(BaseSettings):
     kis_use_mock: bool = True
     fred_api_key: str | None = None  # FRED(미국 연준) — City AI의 글로벌 금리 입력
     fmp_api_key: str | None = None  # Financial Modeling Prep — 시세·실적발표 transcript
+    # SEC EDGAR — 마이크론 등 미국 상장사 재무제표(company facts API, API 키 불필요).
+    # SEC 정책상 User-Agent에 식별 가능한 이메일이 없으면 403으로 거부한다 —
+    # "회사명/앱이름 이메일" 형식 권장(SEC 문서 예시: "Sample Company Name AdminContact@<sample company domain>.com").
+    sec_edgar_user_agent: str | None = None
 
     # 인제스천 실패·품질게이트 알림용(app/ingestion/alerting.py). 비워두면 알림은
     # DB 기록만 되고 텔레그램 전송은 조용히 스킵된다(R2/Supabase와 동일한 옵션 패턴).

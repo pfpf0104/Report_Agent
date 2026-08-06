@@ -27,6 +27,7 @@ _CONNECTOR_LABELS = {
     "kis": "KIS (한국투자증권 Open API)",
     "bok": "BOK (한국은행 경제통계시스템)",
     "fred": "FRED (세인트루이스 연은)",
+    "sec_edgar": "SEC EDGAR (미국 증권거래위원회 공시시스템)",
 }
 
 _COMMON_DISCLAIMER = (
