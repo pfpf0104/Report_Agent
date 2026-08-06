@@ -40,6 +40,7 @@ import numpy as np
 from sqlalchemy.orm import Session
 
 from app.db.models.dim_asset import AssetType, DimAsset
+from app.db.models.fact_financial_quarterly import FactFinancialQuarterly
 from app.db.models.fact_market_daily import FactMarketDaily
 from app.db.point_in_time import visible_as_of
 
@@ -137,6 +138,12 @@ STALE_AFTER_DAYS = 7  # 주말·공휴일 연휴를 감안한 기본값(일별 �
 # 스케줄의 정상적인 특성). 기본 7일로는 매일 오탐이 나 15일로 넉넉히 둔다.
 STALE_AFTER_DAYS_OVERRIDE: dict[str, int] = {
     "USDINDEX": 15,
+    # FHFA 전미 주택가격지수(분기)는 관측월 말일 기준 공표 지연이 그 자체로
+    # 약 148일이다(2026-08 실측: 관측월 2026-01-01 → 공표 knowledge_date
+    # 2026-05-26 확인). 분기(약 92일)+지연(148일)을 합치면 다음 관측치가
+    # 정상적으로 나오기까지 240일 가까이 걸릴 수 있어, MACRO_ECONOMIC 공통
+    # 임계(150일)로는 매 분기 오탐이 난다. 250일로 넉넉히 둔다.
+    "USHPIFHFA": 250,
 }
 
 # 자산유형 전체를 관대한 스테일 임계로 두는 예외 — 코드마다 등록하지 않아도
@@ -149,6 +156,14 @@ STALE_AFTER_DAYS_OVERRIDE: dict[str, int] = {
 STALE_AFTER_DAYS_OVERRIDE_BY_TYPE: dict[str, int] = {
     AssetType.MACRO_ECONOMIC.value: 150,
 }
+
+# 가격(fact_market_daily)이 아니라 재무제표(fact_financial_quarterly)로만
+# 추적되는 자산 — 마이크론이 첫 사례다(2026-08, ingest_micron_financials.py).
+# check_has_data 등 가격 기반 검사는 이 자산들에 항상 "데이터 없음" ERROR를
+# 내는데, 애초에 가격을 적재하는 job이 없어 정상적으로 비어 있는 것이다 —
+# 대신 check_has_financial_statements로 fact_financial_quarterly 존재 여부를
+# 확인한다.
+FINANCIAL_STATEMENTS_ONLY_CODES: set[str] = {"MU"}
 
 
 @dataclass(frozen=True)
@@ -206,6 +221,27 @@ def check_has_data(asset: DimAsset, rows: list[FactMarketDaily]) -> list[Quality
         QualityIssue(
             ERROR, "has_data", asset.code,
             "해당 시점까지 조회 가능한 데이터가 한 건도 없다 — 인제스천이 실행되지 않았거나 knowledge_date가 미래로 잡혀 있다",
+        )
+    ]
+
+
+def check_has_financial_statements(
+    db: Session, asset: DimAsset, as_of: date
+) -> list[QualityIssue]:
+    """FINANCIAL_STATEMENTS_ONLY_CODES 자산 전용 — 가격이 아니라
+    fact_financial_quarterly에 point-in-time으로 조회 가능한 행이 있는지 본다."""
+    exists = (
+        visible_as_of(db.query(FactFinancialQuarterly), FactFinancialQuarterly, as_of)
+        .filter(FactFinancialQuarterly.asset_id == asset.asset_id)
+        .first()
+        is not None
+    )
+    if exists:
+        return []
+    return [
+        QualityIssue(
+            ERROR, "has_financial_statements", asset.code,
+            "해당 시점까지 조회 가능한 재무제표 데이터가 한 건도 없다 — 인제스천이 실행되지 않았거나 knowledge_date가 미래로 잡혀 있다",
         )
     ]
 
@@ -332,6 +368,13 @@ def run_quality_gate(
         return report
 
     for asset in assets:
+        if asset.code in FINANCIAL_STATEMENTS_ONLY_CODES:
+            # 가격이 아니라 재무제표로만 추적되는 자산 — fact_market_daily
+            # 기반 검사(스테일·이상치·상식범위·결측)는 애초에 적용 대상이
+            # 아니다.
+            report.issues.extend(check_has_financial_statements(db, asset, as_of))
+            continue
+
         rows = _rows_for(db, asset, as_of)
 
         missing = check_has_data(asset, rows)

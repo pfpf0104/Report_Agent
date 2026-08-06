@@ -10,10 +10,12 @@ import pytest
 
 from app.db.base import SessionLocal
 from app.db.models.dim_asset import AssetType, DimAsset
+from app.db.models.fact_financial_quarterly import FactFinancialQuarterly
 from app.db.models.fact_market_daily import FactMarketDaily
 from app.ingestion.quality import (
     ERROR,
     WARNING,
+    check_has_financial_statements,
     check_missing_business_days,
     check_outliers,
     check_staleness,
@@ -21,13 +23,16 @@ from app.ingestion.quality import (
     run_quality_gate,
 )
 
-CODES = ["TESTKTB3Y", "TESTEQ", "TESTETF", "TESTKRWETF", "TESTUSDETF", "TESTSPREAD", "TESTINDEX"]
+CODES = ["TESTKTB3Y", "TESTEQ", "TESTETF", "TESTKRWETF", "TESTUSDETF", "TESTSPREAD", "TESTINDEX", "TESTFSONLY"]
 
 
 @pytest.fixture()
 def db():
     session = SessionLocal()
     yield session
+    session.query(FactFinancialQuarterly).filter(FactFinancialQuarterly.asset_id.in_(
+        session.query(DimAsset.asset_id).filter(DimAsset.code.in_(CODES))
+    )).delete(synchronize_session=False)
     session.query(FactMarketDaily).filter(FactMarketDaily.asset_id.in_(
         session.query(DimAsset.asset_id).filter(DimAsset.code.in_(CODES))
     )).delete(synchronize_session=False)
@@ -314,6 +319,64 @@ def test_gate_passes_on_clean_data(db):
     assert "이상 없음" in report.summary()
 
 
+def test_has_financial_statements_flags_missing_data(db):
+    asset = _asset(db, "TESTFSONLY", AssetType.EQUITY.value, currency="USD")
+    issues = check_has_financial_statements(db, asset, as_of=date(2026, 7, 30))
+    assert len(issues) == 1
+    assert issues[0].severity == ERROR
+    assert issues[0].check == "has_financial_statements"
+
+
+def test_has_financial_statements_passes_when_row_visible(db):
+    asset = _asset(db, "TESTFSONLY", AssetType.EQUITY.value, currency="USD")
+    db.add(FactFinancialQuarterly(
+        asset_id=asset.asset_id, fiscal_year=2026, fiscal_quarter=2,
+        knowledge_date=date(2026, 3, 19), bps=64.24, roe=0.19, source="test",
+    ))
+    db.commit()
+
+    assert check_has_financial_statements(db, asset, as_of=date(2026, 7, 30)) == []
+
+
+def test_has_financial_statements_respects_point_in_time_cutoff(db):
+    """knowledge_date가 미래인 행은 아직 '없는' 것으로 취급해야 한다."""
+    asset = _asset(db, "TESTFSONLY", AssetType.EQUITY.value, currency="USD")
+    db.add(FactFinancialQuarterly(
+        asset_id=asset.asset_id, fiscal_year=2026, fiscal_quarter=2,
+        knowledge_date=date(2027, 1, 1), bps=64.24, roe=0.19, source="test",
+    ))
+    db.commit()
+
+    issues = check_has_financial_statements(db, asset, as_of=date(2026, 7, 30))
+    assert len(issues) == 1
+
+
+def test_gate_skips_price_checks_for_financial_statements_only_assets(db, monkeypatch):
+    """FINANCIAL_STATEMENTS_ONLY_CODES에 등록된 자산(마이크론 등)은
+    fact_market_daily가 없어도 has_data 등 가격 기반 검사로 ERROR가 나면
+    안 된다 — 2026-08 실측: MU가 정상 상태인데도 has_data ERROR로 잡혔다.
+    운영 코드 "MU"는 다른 테스트/실제 데이터와 충돌할 수 있어 격리된 코드로
+    오버라이드 매핑에 임시로 추가해 검증한다."""
+    import app.ingestion.quality as quality_module
+
+    monkeypatch.setattr(
+        quality_module, "FINANCIAL_STATEMENTS_ONLY_CODES",
+        quality_module.FINANCIAL_STATEMENTS_ONLY_CODES | {"TESTFSONLY"},
+    )
+
+    asset = _asset(db, "TESTFSONLY", AssetType.EQUITY.value, currency="USD")
+    as_of = date(2026, 7, 30)
+    db.add(FactFinancialQuarterly(
+        asset_id=asset.asset_id, fiscal_year=2026, fiscal_quarter=2,
+        knowledge_date=date(2026, 3, 19), bps=64.24, roe=0.19, source="test",
+    ))
+    db.commit()
+
+    report = run_quality_gate(db, as_of=as_of, asset_codes=["TESTFSONLY"])
+
+    assert report.ok, [str(i) for i in report.issues]
+
+
 def test_gate_uses_staleness_override_for_specific_assets(db, monkeypatch):
     """USDINDEX(연준 달러지수)는 발표 자체가 실측으로 확인한 결과 며칠 지연되므로
     기본 7일 임계값이 아니라 15일을 쓴다 — 2026-08 실측: observation_end가
@@ -327,6 +390,26 @@ def test_gate_uses_staleness_override_for_specific_assets(db, monkeypatch):
     asset = _asset(db, "TESTINDEX", AssetType.MACRO_INDEX.value, currency="USD")
     as_of = date(2026, 8, 2)
     _add(db, asset, as_of - timedelta(days=9), 120.71)  # 9일 경과 — 기본 7일 초과
+
+    report = run_quality_gate(db, as_of=as_of, asset_codes=["TESTINDEX"])
+
+    assert report.ok, [str(i) for i in report.issues]
+
+
+def test_gate_uses_extended_staleness_override_for_fhfa_housing_index(db, monkeypatch):
+    """FHFA 전미 주택가격지수(USHPIFHFA)는 분기 발표(약 92일)+공표 지연(약
+    148일)이 겹쳐 정상 상태에서도 240일 가까이 벌어질 수 있다 — 2026-08
+    실측: 218일 경과 상태가 MACRO_ECONOMIC 공통 임계(150일)로 오탐 처리된
+    것을 발견하고 코드별 250일 예외를 추가했다. 실제 코드 "USHPIFHFA"는
+    운영 자산이라(unique 제약) 격리된 코드로 오버라이드 매핑에 임시로
+    추가해 검증한다(다른 STALE_AFTER_DAYS_OVERRIDE 테스트와 동일 패턴)."""
+    import app.ingestion.quality as quality_module
+
+    monkeypatch.setitem(quality_module.STALE_AFTER_DAYS_OVERRIDE, "TESTINDEX", 250)
+
+    asset = _asset(db, "TESTINDEX", AssetType.MACRO_ECONOMIC.value, currency="USD")
+    as_of = date(2026, 8, 7)
+    _add(db, asset, as_of - timedelta(days=218), 713.09)  # 실측과 동일한 경과일
 
     report = run_quality_gate(db, as_of=as_of, asset_codes=["TESTINDEX"])
 
